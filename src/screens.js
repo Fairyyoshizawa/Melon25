@@ -350,6 +350,79 @@ export class EndingChoiceScreen {
   }
 }
 
+// エンディングは 1 場面ずつ進む。場面ごとに暗転・時計・シルエットの演出が変わる。
+export class EndingScreen {
+  constructor(game, opts) {
+    this.game = game;
+    this.time = 0;
+    this.beatTime = 0;
+    this.index = 0;
+    this.beats = opts.beats;
+    this.onDone = opts.onDone;
+  }
+
+  get beat() {
+    return this.beats[this.index];
+  }
+
+  update(dt) {
+    this.time += dt;
+    this.beatTime += dt;
+    if (!wasPressed('confirm')) return;
+    // 出そろう前の Enter は、まず全文を表示するために使う
+    if (this.beatTime < this.beat.lines.length * 0.9) {
+      this.beatTime = 99;
+      return;
+    }
+    sfx.confirm();
+    if (this.index < this.beats.length - 1) {
+      this.index++;
+      this.beatTime = 0;
+      return;
+    }
+    this.onDone();
+  }
+
+  draw(g) {
+    const beat = this.beat;
+    if (beat.dark) {
+      g.fillStyle = '#04060a';
+      g.fillRect(0, 0, 960, 540);
+    } else {
+      backdrop(g, { figure: false });
+      if (beat.figure) {
+        drawSilhouette(g, 700, 512, 200, { dir: -1, rim: beat.rim || 'rgba(150,175,210,0.35)' });
+        g.fillStyle = 'rgba(4,6,10,0.45)';
+        g.fillRect(0, 0, 960, 540);
+      }
+    }
+
+    if (beat.clock) this.drawClock(g, beat);
+    if (beat.heading) {
+      drawSpacedText(g, beat.heading, 250, beat.clock ? 300 : 140, 'bold 36px sans-serif', beat.color || '#e8eefc', 4);
+    }
+
+    g.save();
+    g.fillStyle = '#8fa0bd';
+    g.font = '16px sans-serif';
+    beat.lines.forEach((line, i) => {
+      if (this.beatTime < i * 0.9) return;
+      g.fillText(line, 64, (beat.clock ? 348 : 190) + i * 28);
+    });
+    g.restore();
+
+    drawCenteredText(g, 'Enter で進む', 480, 512, '12px sans-serif', '#4b5670');
+  }
+
+  // ループしている世界の時計。TRUE END だけ 0:00:01 に動く。
+  drawClock(g, beat) {
+    const ticked = beat.tick && this.beatTime > 1.6;
+    const label = ticked ? '0:00:01' : '0:00:00';
+    const color = ticked ? '#7fe7ff' : '#4b5670';
+    drawSpacedText(g, label, 250, 200, 'bold 64px sans-serif', color, 10);
+  }
+}
+
 export class ResultScreen {
   constructor(game, opts) {
     this.game = game;
