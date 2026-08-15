@@ -399,7 +399,8 @@ export class EndingScreen {
 
     if (beat.clock) this.drawClock(g, beat);
     if (beat.heading) {
-      drawSpacedText(g, beat.heading, 250, beat.clock ? 300 : 140, 'bold 36px sans-serif', beat.color || '#e8eefc', 4);
+      // 長い見出しでも切れないよう、本文と同じ左端に揃える
+      drawSpacedText(g, beat.heading, 64, beat.clock ? 300 : 140, 'bold 34px sans-serif', beat.color || '#e8eefc', 4, 'left');
     }
 
     g.save();
