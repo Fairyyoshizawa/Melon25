@@ -5,6 +5,22 @@ import { save, unlockEndless, unlockAchievement, recordDay } from './save.js';
 import { getAchievement, SURVIVAL_THRESHOLDS } from './achievements.js';
 import { pushToast, updateToasts, drawToasts } from './ui.js';
 import { getMenuScene } from './scene.js';
+import { ABILITIES } from './abilities.js';
+
+// 能力は初期状態では封印されていて、エコーを 1 体倒すごとに 1 つずつ解放される。
+function abilitiesUpTo(count) {
+  return ABILITIES.slice(0, Math.max(0, Math.min(ABILITIES.length, count))).map((a, i) => i);
+}
+
+// PERFECT ECHO を倒した時点で 3 つ。エンドレスでは 1 日生き残るごとにもう 1 つ。
+function endlessAbilityCount(day) {
+  return Math.min(ABILITIES.length, day + 2);
+}
+
+function announceAbility(count) {
+  const ab = ABILITIES[count - 1];
+  if (ab) pushToast(`${ab.icon} ${ab.name} 解放`, '倒した昨日の自分から能力を取り戻した', 'achievement');
+}
 
 const STORY_STAGES = [
   {
@@ -22,7 +38,7 @@ const STORY_STAGES = [
     echoHp: 95,
     echoDamage: 10,
     echoSpeed: 200,
-    echoAbilities: [0, 4],
+    echoAbilities: [0],
     aiReaction: 0.4,
   },
   {
@@ -79,6 +95,7 @@ class Game {
       echoSpeed: stage.echoSpeed,
       echoAbilities: stage.echoAbilities,
       echoColor: stage.echoColor,
+      playerAbilities: abilitiesUpTo(stageIndex),
       aiReaction: stage.aiReaction,
       aiWeights: [1, 1, 1, 1, 1],
       onEnd: (e) => this.onStoryEnd(e),
@@ -103,6 +120,7 @@ class Game {
       return;
     }
     if (this.storyStage < STORY_STAGES.length - 1) {
+      announceAbility(this.storyStage + 1);
       this.startStory(this.storyStage + 1);
     } else {
       this.screen = new StealChoiceScreen(this);
@@ -138,6 +156,7 @@ class Game {
       echoSpeed: speed,
       echoAbilities: [0, 1, 2, 3, 4],
       echoColor: '#ff6b8a',
+      playerAbilities: abilitiesUpTo(endlessAbilityCount(day)),
       aiReaction: Math.max(0.12, 0.42 - day * 0.008),
       aiWeights: this.endlessProfile.map((c) => 1 + c * 1.5),
       onEnd: (e) => this.onEndlessEnd(e),
@@ -156,7 +175,11 @@ class Game {
     if (result === 'win') {
       recordDay(this.endlessDay);
       this.grantEndlessAchievements(battle, this.endlessDay);
-      this.startEndless(this.endlessDay + 1);
+      const next = this.endlessDay + 1;
+      if (endlessAbilityCount(next) > endlessAbilityCount(this.endlessDay)) {
+        announceAbility(endlessAbilityCount(next));
+      }
+      this.startEndless(next);
       return;
     }
     const day = this.endlessDay;
