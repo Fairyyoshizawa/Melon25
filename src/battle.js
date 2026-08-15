@@ -161,7 +161,7 @@ export class Battle {
 
     this.aiWeights = config.aiWeights || [1, 1, 1, 1, 1];
     this.aiReaction = config.aiReaction || 0.35;
-    this.aiThink = 0.8;
+    this.aiThink = config.aiThink || 0.8;
     this.aiTimer = 0;
 
     // 実績・戦績トラッキング
