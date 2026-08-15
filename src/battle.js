@@ -10,14 +10,15 @@ import {
 } from './abilities.js';
 import { isDown, wasPressed } from './input.js';
 import { sfx } from './audio.js';
-import { drawBar, drawCenteredText } from './ui.js';
+import { drawCenteredText, drawGlowBar, drawPanel, drawKeyCap, drawSpacedText } from './ui.js';
 import { save } from './save.js';
+import { getBattleScene, drawSilhouette } from './scene.js';
 
-const GROUND_Y = 372;
-const ARENA_L = 70;
-const ARENA_R = 890;
-const BODY_W = 34;
-const BODY_H = 64;
+const FOOT_Y = 448;
+const FIGURE_H = 116;
+const ARENA_L = 200;
+const ARENA_R = 800;
+const BODY_W = 40;
 
 const ATTACK_WINDUP = 0.13;
 const ATTACK_ACTIVE = 0.09;
@@ -126,6 +127,7 @@ export class Battle {
 
   update(dt) {
     this.time += dt;
+    getBattleScene().update(dt);
     this.shake = Math.max(0, this.shake - dt * 3);
     this.hitFlash = Math.max(0, this.hitFlash - dt * 4);
 
@@ -477,21 +479,17 @@ export class Battle {
     if (this.introTimer > 0) {
       g.fillStyle = 'rgba(3,4,8,0.72)';
       g.fillRect(0, 0, 960, 540);
-      drawCenteredText(g, this.label, 480, 260, 'bold 54px sans-serif', '#e8eefc');
-      drawCenteredText(g, this.mode === 'endless' ? '昨日の自分が来る' : '', 480, 306, '18px sans-serif', '#8fa0bd');
+      drawSpacedText(g, this.label, 480, 260, 'bold 48px sans-serif', '#e8eefc', 6);
+      drawCenteredText(g, this.mode === 'endless' ? '昨日の自分が来る' : '', 480, 300, '18px sans-serif', '#8fa0bd');
     } else if (this.result === 'win') {
-      drawCenteredText(g, 'ECHO 撃破', 480, 250, 'bold 46px sans-serif', '#8fffc4');
+      drawSpacedText(g, 'ECHO 撃破', 480, 250, 'bold 44px sans-serif', '#8fffc4', 6);
     } else if (this.result === 'lose') {
-      drawCenteredText(g, '昨日に負けた', 480, 250, 'bold 46px sans-serif', '#ff6b8a');
+      drawSpacedText(g, '昨日に負けた', 480, 250, 'bold 44px sans-serif', '#ff6b8a', 6);
     }
   }
 
   drawBackground(g) {
-    const grd = g.createLinearGradient(0, 0, 0, 540);
-    grd.addColorStop(0, '#0a0f1c');
-    grd.addColorStop(1, '#05060a');
-    g.fillStyle = grd;
-    g.fillRect(0, 0, 960, 540);
+    getBattleScene().draw(g);
 
     if (this.player.fx.timestopSelf > 0 || this.echo.fx.timestopSelf > 0) {
       g.fillStyle = 'rgba(255,232,107,0.06)';
@@ -501,82 +499,79 @@ export class Battle {
       g.fillStyle = `rgba(255,255,255,${this.hitFlash * 0.12})`;
       g.fillRect(0, 0, 960, 540);
     }
-
-    g.strokeStyle = '#1b2333';
-    g.lineWidth = 2;
-    g.beginPath();
-    g.moveTo(0, GROUND_Y + BODY_H);
-    g.lineTo(960, GROUND_Y + BODY_H);
-    g.stroke();
-
-    g.strokeStyle = '#121a29';
-    g.lineWidth = 1;
-    for (let x = 0; x < 960; x += 48) {
-      g.beginPath();
-      g.moveTo(x, GROUND_Y + BODY_H);
-      g.lineTo(x - 60, 540);
-      g.stroke();
-    }
   }
 
   drawFighter(g, f) {
-    const y = GROUND_Y;
-    if (f.fx.afterimage > 0) {
+    const rim = f.state === 'hitstun' ? '#ffffff' : f.color;
+    const figure = (x, alpha, opts = {}) => {
       g.save();
-      g.globalAlpha = 0.35;
-      g.fillStyle = f.color;
-      g.fillRect(f.fx.afterimageX - BODY_W / 2, y, BODY_W, BODY_H);
+      g.globalAlpha = alpha;
+      if (opts.glow !== false) {
+        g.shadowColor = rim;
+        g.shadowBlur = 14;
+      }
+      drawSilhouette(g, x, FOOT_Y, FIGURE_H, {
+        fill: '#070a11',
+        dir: f.dir,
+        rim,
+        blade: f.fx.flame > 0 ? 'rgba(255,140,70,0.85)' : 'rgba(190,210,240,0.6)',
+        raise: opts.raise,
+      });
       g.restore();
-    }
-    if (f.fx.dashTrail > 0) {
-      g.save();
-      g.globalAlpha = f.fx.dashTrail * 1.6;
-      g.fillStyle = f.color;
-      g.fillRect(f.x - f.dir * 60 - BODY_W / 2, y, BODY_W, BODY_H);
-      g.restore();
-    }
+    };
+
+    // 足元の影と映り込み
+    g.save();
+    g.globalAlpha = 0.5;
+    g.fillStyle = 'rgba(0,0,0,0.6)';
+    g.beginPath();
+    g.ellipse(f.x, FOOT_Y + 3, 26, 6, 0, 0, Math.PI * 2);
+    g.fill();
+    g.restore();
+
+    if (f.fx.afterimage > 0) figure(f.fx.afterimageX, 0.3);
+    if (f.fx.dashTrail > 0) figure(f.x - f.dir * 60, Math.min(0.5, f.fx.dashTrail * 1.6));
+
+    const attacking = f.state === 'attack';
+    const active = attacking && f.stateTime >= ATTACK_WINDUP && f.stateTime < ATTACK_WINDUP + ATTACK_ACTIVE;
+    figure(f.x, f.fx.frozen > 0 ? 0.6 : 1, { raise: attacking && !active });
 
     g.save();
-    if (f.fx.frozen > 0) g.globalAlpha = 0.65;
-    g.fillStyle = f.state === 'hitstun' ? '#ffffff' : f.color;
-    g.fillRect(f.x - BODY_W / 2, y, BODY_W, BODY_H);
-
-    // 目
-    g.fillStyle = '#05060a';
-    g.fillRect(f.x - 6 + f.dir * 6, y + 14, 10, 5);
-
+    const cy = FOOT_Y - FIGURE_H * 0.5;
     if (f.fx.flame > 0) {
-      g.strokeStyle = '#ff7a3c';
-      g.lineWidth = 3;
-      g.strokeRect(f.x - BODY_W / 2 - 3, y - 3, BODY_W + 6, BODY_H + 6);
+      g.shadowColor = '#ff7a3c';
+      g.shadowBlur = 18;
+      g.strokeStyle = 'rgba(255,122,60,0.9)';
+      g.lineWidth = 2;
+      g.strokeRect(f.x - 22, FOOT_Y - FIGURE_H - 6, 44, FIGURE_H + 12);
+      g.shadowBlur = 0;
     }
     if (f.fx.reflect > 0) {
       g.strokeStyle = '#9e5cff';
       g.lineWidth = 3;
       g.beginPath();
-      g.arc(f.x, y + BODY_H / 2, 52, 0, Math.PI * 2);
+      g.arc(f.x, cy, 58, 0, Math.PI * 2);
       g.stroke();
     }
     if (f.fx.iframe > 0) {
       g.strokeStyle = '#7fe7ff';
       g.lineWidth = 2;
-      g.strokeRect(f.x - BODY_W / 2 - 6, y - 6, BODY_W + 12, BODY_H + 12);
+      g.strokeRect(f.x - 26, FOOT_Y - FIGURE_H - 10, 52, FIGURE_H + 20);
     }
-
-    if (f.state === 'attack') {
-      const t = f.stateTime;
-      const active = t >= ATTACK_WINDUP && t < ATTACK_WINDUP + ATTACK_ACTIVE;
-      g.strokeStyle = active ? (f.fx.flame > 0 ? '#ff7a3c' : '#ffffff') : 'rgba(255,255,255,0.25)';
+    if (attacking) {
+      g.strokeStyle = active ? (f.fx.flame > 0 ? '#ff7a3c' : '#ffffff') : 'rgba(255,255,255,0.22)';
       g.lineWidth = active ? 6 : 2;
       g.beginPath();
-      g.arc(f.x, y + BODY_H / 2, ATTACK_RANGE * (active ? 1 : 0.7), f.dir > 0 ? -0.8 : Math.PI - 0.8, f.dir > 0 ? 0.8 : Math.PI + 0.8);
+      g.arc(f.x, cy, ATTACK_RANGE * (active ? 1 : 0.7), f.dir > 0 ? -0.8 : Math.PI - 0.8, f.dir > 0 ? 0.8 : Math.PI + 0.8);
       g.stroke();
     }
     if (f.state === 'parry' && f.stateTime <= PARRY_ACTIVE) {
+      g.shadowColor = '#ffe86b';
+      g.shadowBlur = 16;
       g.strokeStyle = '#ffe86b';
       g.lineWidth = 4;
       g.beginPath();
-      g.arc(f.x + f.dir * 26, y + BODY_H / 2, 30, 0, Math.PI * 2);
+      g.arc(f.x + f.dir * 26, cy, 32, 0, Math.PI * 2);
       g.stroke();
     }
     g.restore();
@@ -585,42 +580,165 @@ export class Battle {
   drawHud(g) {
     const p = this.player;
     const e = this.echo;
-    drawBar(g, 40, 34, 340, 18, p.hp / p.maxHp, '#7fe7ff');
-    drawBar(g, 40, 58, 260, 8, p.mp / p.maxMp, '#4d7dff');
-    drawBar(g, 580, 34, 340, 18, e.hp / e.maxHp, '#ff6b8a');
 
-    g.fillStyle = '#93a0b8';
+    // 左上: HP / EP
+    g.save();
+    g.textBaseline = 'middle';
     g.font = '13px sans-serif';
-    g.fillText('YOU', 40, 28);
+    g.fillStyle = '#cfd6e4';
+    g.fillText(`HP ${Math.max(0, Math.ceil(p.hp))} / ${p.maxHp}`, 24, 24);
+    g.fillText(`EP ${Math.ceil(p.mp)} / ${p.maxMp}`, 24, 60);
+    g.restore();
+    drawGlowBar(g, 24, 32, 300, 10, p.hp / p.maxHp, '#e5344a', '#ff5566');
+    drawGlowBar(g, 24, 68, 300, 8, p.mp / p.maxMp, '#3f7bff', '#6da3ff');
+
+    // 右上: エコー
+    g.save();
+    g.textBaseline = 'middle';
     g.textAlign = 'right';
-    g.fillText(e.name, 920, 28);
-    g.textAlign = 'left';
+    g.font = '13px sans-serif';
+    g.fillStyle = '#cfd6e4';
+    g.fillText(e.name, 936, 24);
+    g.fillText(`HP ${Math.max(0, Math.ceil(e.hp))} / ${e.maxHp}`, 936, 62);
+    g.restore();
+    drawGlowBar(g, 636, 32, 300, 10, e.hp / e.maxHp, '#7a3cff', '#9e5cff');
 
-    drawCenteredText(g, this.label, 480, 92, 'bold 18px sans-serif', '#cfd6e4');
+    // 中央上: 経過時間と DAY
+    const total = Math.floor(this.time);
+    const clock = `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+    drawSpacedText(g, clock, 480, 34, '30px sans-serif', '#e8eefc', 3);
+    drawCenteredText(g, '経過時間', 480, 54, '11px sans-serif', '#66738d');
+    drawSpacedText(g, `DAY ${this.day}`, 480, 108, 'bold 34px sans-serif', '#e8eefc', 5);
+    drawCenteredText(g, this.subtitle(), 480, 132, '13px sans-serif', '#8fa0bd');
+
+    this.drawAbilityList(g);
+    this.drawAbilityRing(g);
+    this.drawObjective(g);
+    this.drawControls(g);
+
+    drawPanel(g, 300, 500, 360, 30, { fill: 'rgba(6,9,15,0.8)', corners: false });
+    drawCenteredText(g, this.hintText(), 480, 519, '12px sans-serif', '#93a0b8');
+  }
+
+  subtitle() {
+    return this.mode === 'endless' ? '昨日の自分' : this.label;
+  }
+
+  hintText() {
     if (this.mode === 'endless') {
-      drawCenteredText(g, `連続パリィ ${this.parryStreak} / 瞬歩回避 ${this.dodgeDashStreak}`, 480, 112, '12px sans-serif', '#55617a');
+      return `連続パリィ ${this.parryStreak} / 瞬歩回避 ${this.dodgeDashStreak}`;
     }
+    return 'ヒント：エコーは昨日のあなたの動きや使った能力を再現してくる。';
+  }
 
-    // 能力スロット
-    const slotW = 92;
-    const startX = 480 - (slotW * 5 + 40) / 2;
+  drawAbilityList(g) {
+    const p = this.player;
     for (let i = 0; i < 5; i++) {
       const ab = ABILITIES[i];
-      const x = startX + i * (slotW + 10);
-      const y = 470;
+      const y = 100 + i * 38;
       const ready = p.cd[i] <= 0 && p.mp >= ab.cost;
-      g.fillStyle = 'rgba(12,16,26,0.9)';
-      g.fillRect(x, y, slotW, 44);
-      g.strokeStyle = ready ? ab.color : '#2c3546';
-      g.lineWidth = 2;
-      g.strokeRect(x, y, slotW, 44);
+      drawPanel(g, 24, y, 210, 32, {
+        fill: 'rgba(6,9,15,0.72)',
+        border: ready ? `${ab.color}` : 'rgba(150,168,196,0.18)',
+        glow: ready ? ab.color : null,
+        glowBlur: 8,
+        corners: false,
+      });
+      // アイコン枠
+      g.save();
+      g.strokeStyle = ready ? ab.color : 'rgba(150,168,196,0.25)';
+      g.lineWidth = 1;
+      g.strokeRect(30.5, y + 4.5, 23, 23);
+      g.fillStyle = ready ? ab.color : '#3d4760';
+      g.textBaseline = 'middle';
+      g.textAlign = 'center';
+      g.font = '13px sans-serif';
+      g.fillText(ab.icon, 42, y + 17);
+      g.textAlign = 'left';
       g.fillStyle = ready ? '#e8eefc' : '#55617a';
-      g.font = 'bold 15px sans-serif';
-      g.fillText(`${i + 1} ${ab.name}`, x + 10, y + 22);
+      g.font = '15px sans-serif';
+      g.fillText(ab.name, 62, y + 17);
       g.font = '11px sans-serif';
-      g.fillStyle = '#7b8aa5';
-      g.fillText(p.cd[i] > 0 ? `${p.cd[i].toFixed(1)}s` : `MP ${ab.cost}`, x + 10, y + 37);
+      g.fillStyle = '#66738d';
+      g.fillText(p.cd[i] > 0 ? `${p.cd[i].toFixed(1)}s` : `EP ${ab.cost}`, 130, y + 17);
+      g.restore();
+      drawKeyCap(g, 204, y + 6, String(i + 1), { height: 20 });
     }
+  }
+
+  drawAbilityRing(g) {
+    const p = this.player;
+    const cx = 872;
+    const cy = 452;
+    const r = 58;
+    const angles = [-Math.PI / 2, 0, Math.PI / 2, Math.PI, -Math.PI / 2];
+    for (let i = 0; i < 5; i++) {
+      const ab = ABILITIES[i];
+      const ready = p.cd[i] <= 0 && p.mp >= ab.cost;
+      const x = i === 4 ? cx : cx + Math.cos(angles[i]) * r;
+      const y = i === 4 ? cy : cy + Math.sin(angles[i]) * r;
+      const s = i === 4 ? 17 : 22;
+
+      g.save();
+      g.translate(x, y);
+      g.rotate(Math.PI / 4);
+      if (ready) {
+        g.shadowColor = ab.color;
+        g.shadowBlur = 14;
+      }
+      g.fillStyle = ready ? 'rgba(12,16,26,0.92)' : 'rgba(8,10,16,0.8)';
+      g.fillRect(-s, -s, s * 2, s * 2);
+      g.strokeStyle = ready ? ab.color : 'rgba(150,168,196,0.25)';
+      g.lineWidth = 2;
+      g.strokeRect(-s, -s, s * 2, s * 2);
+      g.restore();
+
+      g.save();
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.fillStyle = ready ? ab.color : '#3d4760';
+      g.font = `${i === 4 ? 13 : 16}px sans-serif`;
+      g.fillText(ab.icon, x, y - 3);
+      g.fillStyle = ready ? '#cfd6e4' : '#3d4760';
+      g.font = '10px sans-serif';
+      g.fillText(String(i + 1), x, y + s - 4);
+      g.restore();
+    }
+  }
+
+  drawObjective(g) {
+    const x = 762;
+    const y = 96;
+    drawPanel(g, x, y, 174, 62, { fill: 'rgba(6,9,15,0.78)' });
+    g.save();
+    g.textBaseline = 'middle';
+    g.fillStyle = '#8fa0bd';
+    g.font = '12px sans-serif';
+    g.fillText('目標', x + 14, y + 18);
+    g.fillStyle = '#e8eefc';
+    g.font = '14px sans-serif';
+    g.fillText(this.mode === 'endless' ? `DAY ${this.day} を生き残る` : '昨日の自分を倒す', x + 14, y + 44);
+    g.restore();
+  }
+
+  drawControls(g) {
+    const rows = [
+      ['J', '攻撃'],
+      ['K', 'ガード'],
+      ['1-5', '能力'],
+      ['← →', '移動'],
+      ['Esc', 'リタイア'],
+    ];
+    g.save();
+    g.textBaseline = 'middle';
+    rows.forEach(([key, label], i) => {
+      const y = 352 + i * 30;
+      const w = drawKeyCap(g, 24, y - 10, key);
+      g.fillStyle = '#8fa0bd';
+      g.font = '13px sans-serif';
+      g.fillText(label, 24 + w + 10, y);
+    });
+    g.restore();
   }
 }
 
