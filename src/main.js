@@ -6,6 +6,7 @@ import { getAchievement, SURVIVAL_THRESHOLDS } from './achievements.js';
 import { pushToast, updateToasts, drawToasts } from './ui.js';
 import { getMenuScene } from './scene.js';
 import { ABILITIES } from './abilities.js';
+import { DEBUG_ENABLED, DebugScreen, debugAbilities, debugEchoHp, debugGhost, debug } from './debug.js';
 
 // 能力は初期状態では封印されていて、エコーを 1 体倒すごとに 1 つずつ解放される。
 function abilitiesUpTo(count) {
@@ -63,6 +64,16 @@ class Game {
     this.screen = new SettingsScreen(this);
   }
 
+  showDebug() {
+    if (!DEBUG_ENABLED) return;
+    this.setNoise(false);
+    this.screen = new DebugScreen(this);
+  }
+
+  showStealChoice() {
+    this.screen = new StealChoiceScreen(this);
+  }
+
   // ---------- ストーリー ----------
 
   startStory(stageIndex = 0) {
@@ -75,13 +86,13 @@ class Game {
       day: stageIndex + 1,
       label: stage.label,
       echoName: stage.echoName,
-      echoHp: stage.echoHp,
+      echoHp: debugEchoHp(stage.echoHp),
       echoDamage: stage.echoDamage,
       echoSpeed: stage.echoSpeed,
-      echoAbilities: stage.echoAbilities,
+      echoAbilities: debugAbilities(debug.echoAbilities, stage.echoAbilities),
       echoColor: stage.echoColor,
-      playerAbilities: abilitiesUpTo(stageIndex),
-      ghost: this.storyGhosts[stageIndex],
+      playerAbilities: debugAbilities(debug.playerAbilities, abilitiesUpTo(stageIndex)),
+      ghost: debugGhost(this.storyGhosts[stageIndex]),
       aiReaction: stage.aiReaction,
       aiWeights: [1, 1, 1, 1, 1],
       onEnd: (e) => this.onStoryEnd(e),
@@ -111,7 +122,7 @@ class Game {
       announceAbility(this.storyStage + 1);
       this.startStory(this.storyStage + 1);
     } else {
-      this.screen = new StealChoiceScreen(this);
+      this.showStealChoice();
     }
   }
 
@@ -142,13 +153,13 @@ class Game {
       day,
       label: `DAY ${day}`,
       echoName: 'ECHO',
-      echoHp: hp,
+      echoHp: debugEchoHp(hp),
       echoDamage: damage,
       echoSpeed: speed,
-      echoAbilities: [0, 1, 2, 3, 4],
+      echoAbilities: debugAbilities(debug.echoAbilities, [0, 1, 2, 3, 4]),
       echoColor: '#ff6b8a',
-      playerAbilities: abilitiesUpTo(ABILITIES.length),
-      ghost: this.endlessGhost,
+      playerAbilities: debugAbilities(debug.playerAbilities, abilitiesUpTo(ABILITIES.length)),
+      ghost: debugGhost(this.endlessGhost),
       aiReaction: Math.max(0.2, 0.5 - day * 0.008),
       aiWeights: this.endlessProfile.map((c) => 1 + c * 1.5),
       onEnd: (e) => this.onEndlessEnd(e),
@@ -234,4 +245,5 @@ class Game {
 initInput(window);
 const game = new Game(document.getElementById('game'), document.getElementById('noise'));
 window.echoGame = game; // デバッグ・動作確認用
+window.echoDebug = debug;
 game.start();

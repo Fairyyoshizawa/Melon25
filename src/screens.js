@@ -4,6 +4,7 @@ import { wasPressed, pressCount } from './input.js';
 import { sfx } from './audio.js';
 import { drawCenteredText, drawPanel, drawKeyCap, drawSpacedText } from './ui.js';
 import { getMenuScene, drawSilhouette } from './scene.js';
+import { DEBUG_ENABLED } from './debug.js';
 
 const MENU_X = 64;
 const MENU_W = 372;
@@ -162,6 +163,11 @@ export class TitleScreen {
       if (this.glitch <= 0) this.game.setNoise(false);
       return;
     }
+    if (DEBUG_ENABLED && wasPressed('debug')) {
+      sfx.confirm();
+      this.game.showDebug();
+      return;
+    }
     const choice = this.menu.update();
     if (choice === 'play') this.game.startStory();
     else if (choice === 'endless') this.game.startEndless();
@@ -181,7 +187,7 @@ export class TitleScreen {
     g.save();
     g.fillStyle = '#3d4760';
     g.font = '13px sans-serif';
-    g.fillText('ver.1.0.0', 24, 522);
+    g.fillText(DEBUG_ENABLED ? 'ver.1.0.0　　F1: DEBUG MENU' : 'ver.1.0.0', 24, 522);
     g.restore();
 
     if (save.endlessUnlocked) {

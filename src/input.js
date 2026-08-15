@@ -20,6 +20,8 @@ const CODE_ALIASES = {
   Digit3: 'ability3',
   Digit4: 'ability4',
   Digit5: 'ability5',
+  F1: 'debug',
+  F2: 'debugKill',
 };
 
 function nameOf(code) {
