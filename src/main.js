@@ -4,6 +4,7 @@ import { TitleScreen, AchievementsScreen, SettingsScreen, StealChoiceScreen, Res
 import { save, unlockEndless, unlockAchievement, recordDay } from './save.js';
 import { getAchievement, SURVIVAL_THRESHOLDS } from './achievements.js';
 import { pushToast, updateToasts, drawToasts } from './ui.js';
+import { getMenuScene } from './scene.js';
 
 const STORY_STAGES = [
   {
@@ -202,6 +203,7 @@ class Game {
     const dt = Math.min(0.05, (now - this.last) / 1000);
     this.last = now;
     this.screen.update(dt);
+    if (!(this.screen instanceof Battle)) getMenuScene().update(dt);
     updateToasts(dt);
     this.screen.draw(this.g);
     drawToasts(this.g);
