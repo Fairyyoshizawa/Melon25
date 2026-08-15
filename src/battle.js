@@ -188,7 +188,7 @@ export class Battle {
     this.shake = Math.max(0, this.shake - dt * 3);
     this.hitFlash = Math.max(0, this.hitFlash - dt * 4);
 
-    // 開発用: エコーを瀕死にして撃破後の流れだけ確認する
+    // 開発用: エコーを瀕死にして撃破後の流れだけ確認する（Ctrl+Shift+K）
     if (DEBUG_ENABLED && wasPressed('debugKill') && !this.result) {
       this.echo.hp = Math.min(this.echo.hp, 1);
     }

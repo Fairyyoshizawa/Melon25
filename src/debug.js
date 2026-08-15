@@ -5,7 +5,7 @@ import { wasPressed, pressCount } from './input.js';
 import { sfx } from './audio.js';
 import { drawCenteredText, drawPanel, drawSpacedText } from './ui.js';
 
-// 製品版にするときはここを false にすると F1 のメニューごと無効になる。
+// 製品版にするときはここを false にすると Ctrl+Shift+D のメニューごと無効になる。
 export const DEBUG_ENABLED = true;
 
 const ABILITY_MODES = ['default', 'all', 'none'];
@@ -196,7 +196,7 @@ export class DebugScreen {
 
     drawCenteredText(
       g,
-      '↑↓ 選択 / ←→ 変更 / Enter 決定 / Esc・F1 で閉じる　　戦闘中: F2 でエコーHPを1に',
+      '↑↓ 選択 / ←→ 変更 / Enter 決定 / Esc・Ctrl+Shift+D で閉じる　　戦闘中: Ctrl+Shift+K でエコーHPを1に',
       480,
       522,
       '12px sans-serif',

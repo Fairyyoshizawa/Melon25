@@ -20,25 +20,35 @@ const CODE_ALIASES = {
   Digit3: 'ability3',
   Digit4: 'ability4',
   Digit5: 'ability5',
-  F1: 'debug',
-  F2: 'debugKill',
 };
 
-function nameOf(code) {
-  return CODE_ALIASES[code] || null;
+// ブラウザのショートカットと衝突しない組み合わせだけをデバッグ用に割り当てる
+const DEBUG_CHORDS = {
+  KeyD: 'debug', // Ctrl+Shift+D: デバッグメニュー
+  KeyK: 'debugKill', // Ctrl+Shift+K: エコーの HP を 1 に
+};
+
+function nameOf(e) {
+  if (e.ctrlKey && e.shiftKey) return DEBUG_CHORDS[e.code] || null;
+  if (e.ctrlKey || e.altKey || e.metaKey) return null;
+  return CODE_ALIASES[e.code] || null;
 }
 
 export function initInput(target = window) {
   target.addEventListener('keydown', (e) => {
-    const name = nameOf(e.code);
+    const name = nameOf(e);
     if (!name) return;
     e.preventDefault();
     if (!down.has(name)) pressedThisFrame.set(name, (pressedThisFrame.get(name) || 0) + 1);
     down.add(name);
   });
   target.addEventListener('keyup', (e) => {
-    const name = nameOf(e.code);
-    if (!name) return;
+    const name = nameOf(e);
+    if (!name) {
+      // 修飾キーを離した瞬間に押しっぱなし扱いが残らないようにする
+      down.delete(CODE_ALIASES[e.code]);
+      return;
+    }
     e.preventDefault();
     down.delete(name);
   });
