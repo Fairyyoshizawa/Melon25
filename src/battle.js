@@ -184,6 +184,7 @@ export class Battle {
     this.attackChance = ghostAggression(this.ghostPlan);
     this.ghostKey = -1; // 今なぞっている「何回斬りかかられたか」
     this.ghostStep = 0;
+    this.ghostStall = 0;
     this.ghostWait = 0;
     this.ghostHold = 0;
     this.comboCut = false;
@@ -372,15 +373,21 @@ export class Battle {
     const bucket = this.ghostBucket();
     const act = bucket[this.ghostStep];
     if (!this.actionFits(act, dist)) {
+      this.ghostStall += dt;
+      // ガードしか記録が無い状況で相手が振ってこないと固まるので、自分から動く
+      if (this.ghostStall > 2) {
+        this.runAi(dt, dist);
+        return;
+      }
       // 間合いや相手の状態が合わないので今は出さない。詰めながら待つ。
       this.approach(dt, dist);
       this.maybeFeint(act, dist);
       this.ghostHold += dt;
-      // ガードは相手が振ってくるまで待つ。攻撃は待ちすぎない
-      if (this.ghostHold > (act.type === 'parry' ? 4 : 1.4)) this.advanceGhost();
+      if (this.ghostHold > (act.type === 'parry' ? 1.2 : 1.4)) this.advanceGhost();
       return;
     }
 
+    this.ghostStall = 0;
     this.advanceGhost();
     e.fx.memory = MEMORY_FLASH;
     if (act.type === 'attack') this.startAttack(e);
@@ -407,19 +414,34 @@ export class Battle {
   // その回数の記録が無ければ、それより前の状況の記録を使う。
   ghostBucket() {
     if (!this.ghostPlan || !this.ghostPlan.size) return null;
-    for (let k = this.playerSwings; k >= 0; k--) {
-      const acts = this.ghostPlan.get(k);
-      if (!acts || !acts.length) continue;
-      if (k !== this.ghostKey) {
-        // 斬りかかられた回数が変わった瞬間に、その状況の行動へ切り替える
-        this.ghostKey = k;
-        this.ghostStep = 0;
-        this.ghostHold = 0;
-        this.ghostWait = Math.min(acts[0].gap, 0.35);
-      }
-      return acts;
+    const key = this.nearestGhostKey(this.playerSwings);
+    if (key === -1) return null;
+    const acts = this.ghostPlan.get(key);
+    if (key !== this.ghostKey) {
+      // 斬りかかられた回数が変わった瞬間に、その状況の行動へ切り替える
+      this.ghostKey = key;
+      this.ghostStep = 0;
+      this.ghostHold = 0;
+      this.ghostStall = 0;
+      this.ghostWait = Math.min(acts[0].gap, 0.35);
     }
-    return null;
+    return acts;
+  }
+
+  // ぴったりの回数の記録が無ければ、いちばん近い回数の記録で代用する
+  nearestGhostKey(taken) {
+    let best = -1;
+    let bestGap = Infinity;
+    for (const [k, acts] of this.ghostPlan) {
+      if (!acts.length) continue;
+      // 少ない側を優先: 同じ差なら「まだそこまで斬られていない」ときの行動を使う
+      const gap = Math.abs(k - taken) * 2 + (k > taken ? 1 : 0);
+      if (gap < bestGap) {
+        bestGap = gap;
+        best = k;
+      }
+    }
+    return best;
   }
 
   advanceGhost() {
