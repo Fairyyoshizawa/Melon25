@@ -50,10 +50,12 @@ function perfectEchoProfile(counts, days) {
   const total = counts.reduce((s, c) => s + c, 0);
   if (total === 0 || days <= 0) {
     // 剣だけで来た相手の記憶なので、エコーもほとんど能力を使わない
-    return { weights: [1, 1, 1, 1, 1], think: 1.7, topIdx: -1 };
+    return { weights: [0.12, 0.12, 0.12, 0.12, 0.12], think: 1.7, topIdx: -1 };
   }
-  const weights = counts.map((c) => 0.3 + 3.4 * (c / total));
   const perDay = total / days;
+  // どの能力を選ぶかは使った割合、そもそも能力を出すかどうかは 1 日あたりの回数で決まる
+  const lean = Math.min(1, 0.15 + perDay * 0.28);
+  const weights = counts.map((c) => lean * (0.3 + 3.4 * (c / total)));
   const think = Math.max(0.4, Math.min(1.7, 1.35 - perDay * 0.11));
   let topIdx = 0;
   counts.forEach((c, i) => {
