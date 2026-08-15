@@ -5,37 +5,34 @@ import { save, unlockEndless, unlockAchievement, recordDay } from './save.js';
 import { getAchievement, SURVIVAL_THRESHOLDS } from './achievements.js';
 import { pushToast, updateToasts, drawToasts } from './ui.js';
 import { getMenuScene } from './scene.js';
+import { ABILITIES } from './abilities.js';
 
-const STORY_STAGES = [
-  {
-    label: 'DAY 1 — 昨日の自分',
-    echoName: 'ECHO',
-    echoHp: 70,
-    echoDamage: 8,
-    echoSpeed: 165,
-    echoAbilities: [],
-    aiReaction: 0.5,
-  },
-  {
-    label: 'DAY 2 — 一昨日より速い自分',
-    echoName: 'ECHO+',
-    echoHp: 95,
-    echoDamage: 10,
-    echoSpeed: 200,
-    echoAbilities: [0, 4],
-    aiReaction: 0.4,
-  },
-  {
-    label: 'PERFECT ECHO',
-    echoName: 'PERFECT ECHO',
-    echoHp: 150,
-    echoDamage: 12,
-    echoSpeed: 235,
-    echoAbilities: [0, 1, 2, 3, 4],
-    echoColor: '#c46bff',
-    aiReaction: 0.28,
-  },
-];
+// 能力は初期状態では封印されていて、エコーを 1 体倒すごとに 1 つずつ解放される。
+function abilitiesUpTo(count) {
+  return ABILITIES.slice(0, Math.max(0, Math.min(ABILITIES.length, count))).map((a, i) => i);
+}
+
+function announceAbility(count) {
+  const ab = ABILITIES[count - 1];
+  if (ab) pushToast(`${ab.icon} ${ab.name} 解放`, '倒した昨日の自分から能力を取り戻した', 'achievement');
+}
+
+const STORY_DAYS = 10;
+
+// DAY n のエコーは「DAY n-1 のプレイヤー」なので、能力も前日のプレイヤーと同じだけ持つ。
+function storyStage(day) {
+  const last = day === STORY_DAYS;
+  return {
+    label: last ? `DAY ${day} — PERFECT ECHO` : `DAY ${day} — 昨日の自分`,
+    echoName: last ? 'PERFECT ECHO' : day >= 6 ? 'ECHO+' : 'ECHO',
+    echoHp: last ? 170 : 60 + day * 9,
+    echoDamage: 7 + day * 0.6,
+    echoSpeed: Math.min(240, 160 + day * 8),
+    echoAbilities: last ? abilitiesUpTo(ABILITIES.length) : abilitiesUpTo(day - 2),
+    echoColor: last ? '#c46bff' : undefined,
+    aiReaction: Math.max(0.26, 0.55 - day * 0.03),
+  };
+}
 
 class Game {
   constructor(canvas, noiseEl) {
@@ -44,6 +41,8 @@ class Game {
     this.noiseEl = noiseEl;
     this.screen = new TitleScreen(this);
     this.endlessProfile = [0, 0, 0, 0, 0];
+    this.storyGhosts = []; // stageIndex -> その日のエコーが再生する前日の操作記録
+    this.endlessGhost = null;
     this.last = performance.now();
   }
 
@@ -68,7 +67,9 @@ class Game {
 
   startStory(stageIndex = 0) {
     this.storyStage = stageIndex;
-    const stage = STORY_STAGES[stageIndex];
+    if (stageIndex === 0) this.storyGhosts = [];
+    const stage = storyStage(stageIndex + 1);
+    this.storyLabel = stage.label;
     this.screen = new Battle({
       mode: 'story',
       day: stageIndex + 1,
@@ -79,13 +80,15 @@ class Game {
       echoSpeed: stage.echoSpeed,
       echoAbilities: stage.echoAbilities,
       echoColor: stage.echoColor,
+      playerAbilities: abilitiesUpTo(stageIndex),
+      ghost: this.storyGhosts[stageIndex],
       aiReaction: stage.aiReaction,
       aiWeights: [1, 1, 1, 1, 1],
       onEnd: (e) => this.onStoryEnd(e),
     });
   }
 
-  onStoryEnd({ result }) {
+  onStoryEnd({ result, battle }) {
     if (result === 'quit') {
       this.showTitle({ selectKey: 'play' });
       return;
@@ -93,7 +96,7 @@ class Game {
     if (result === 'lose') {
       this.screen = new ResultScreen(this, {
         title: '昨日に負けた',
-        lines: [STORY_STAGES[this.storyStage].label],
+        lines: [this.storyLabel],
         items: [
           { key: 'retry', label: 'もう一度' },
           { key: 'title', label: 'タイトルへ' },
@@ -102,7 +105,10 @@ class Game {
       });
       return;
     }
-    if (this.storyStage < STORY_STAGES.length - 1) {
+    if (this.storyStage < STORY_DAYS - 1) {
+      // 今日の自分が、明日のエコーになる
+      this.storyGhosts[this.storyStage + 1] = battle.recording;
+      announceAbility(this.storyStage + 1);
       this.startStory(this.storyStage + 1);
     } else {
       this.screen = new StealChoiceScreen(this);
@@ -123,7 +129,10 @@ class Game {
   // ---------- エンドレス ----------
 
   startEndless(day = 1) {
-    if (day === 1) this.endlessProfile = [0, 0, 0, 0, 0];
+    if (day === 1) {
+      this.endlessProfile = [0, 0, 0, 0, 0];
+      this.endlessGhost = null;
+    }
     this.endlessDay = day;
     const hp = Math.min(420, 80 + day * 6);
     const damage = 8 + day * 0.3;
@@ -138,6 +147,8 @@ class Game {
       echoSpeed: speed,
       echoAbilities: [0, 1, 2, 3, 4],
       echoColor: '#ff6b8a',
+      playerAbilities: abilitiesUpTo(ABILITIES.length),
+      ghost: this.endlessGhost,
       aiReaction: Math.max(0.12, 0.42 - day * 0.008),
       aiWeights: this.endlessProfile.map((c) => 1 + c * 1.5),
       onEnd: (e) => this.onEndlessEnd(e),
@@ -156,6 +167,7 @@ class Game {
     if (result === 'win') {
       recordDay(this.endlessDay);
       this.grantEndlessAchievements(battle, this.endlessDay);
+      this.endlessGhost = battle.recording;
       this.startEndless(this.endlessDay + 1);
       return;
     }

@@ -87,7 +87,7 @@ export class Battle {
       speed: 235,
       color: '#7fe7ff',
       damage: BASE_DAMAGE,
-      abilitySet: [0, 1, 2, 3, 4],
+      abilitySet: config.playerAbilities || [],
     });
 
     this.echo = makeFighter({
@@ -117,6 +117,12 @@ export class Battle {
     this.timestopKill = false;
     this.mirrorAfterimage = false;
     this.pendingUnlocks = [];
+
+    // 昨日の自分＝前回の戦闘で記録したプレイヤーの操作。左右反転して再生する。
+    this.recording = [];
+    this.ghost = config.ghost && config.ghost.length ? config.ghost : null;
+    this.ghostIndex = 0;
+    this.fightTime = 0;
   }
 
   finish(result) {
@@ -148,6 +154,7 @@ export class Battle {
       return;
     }
 
+    this.fightTime += dt;
     this.handlePlayer(dt);
     this.handleEcho(dt);
     this.stepFighter(this.player, this.echo, dt, true);
@@ -170,6 +177,19 @@ export class Battle {
 
   handlePlayer(dt) {
     const p = this.player;
+    const frame = {
+      t: this.fightTime,
+      dt,
+      vx: (isDown('left') ? -1 : 0) + (isDown('right') ? 1 : 0),
+      attack: wasPressed('attack'),
+      parry: wasPressed('parry'),
+      ability: -1,
+    };
+    for (let i = 0; i < 5; i++) {
+      if (wasPressed(`ability${i + 1}`)) frame.ability = i;
+    }
+    this.recording.push(frame);
+
     if (!this.canAct(p)) return;
     if (p.state === 'idle') {
       let vx = 0;
@@ -188,6 +208,10 @@ export class Battle {
   }
 
   handleEcho(dt) {
+    if (this.ghost) {
+      this.replayGhost();
+      return;
+    }
     const e = this.echo;
     if (!this.canAct(e)) return;
     const p = this.player;
@@ -219,6 +243,33 @@ export class Battle {
         e.x += e.dir * e.speed * dt;
       }
     }
+  }
+
+  // 記録済みの操作を鏡写しで再生する。記録を使い切ったら通常 AI に戻す。
+  replayGhost() {
+    const e = this.echo;
+    while (this.ghostIndex < this.ghost.length && this.ghost[this.ghostIndex].t <= this.fightTime) {
+      const f = this.ghost[this.ghostIndex++];
+      if (!this.canAct(e)) continue;
+      const vx = -f.vx;
+      if (e.state === 'idle') {
+        if (vx !== 0) {
+          e.x += vx * e.speed * f.dt;
+          e.dir = vx > 0 ? 1 : -1;
+        }
+        if (f.attack) {
+          e.dir = this.player.x > e.x ? 1 : -1;
+          this.startAttack(e);
+        } else if (f.parry) {
+          this.startParry(e);
+        }
+      }
+      if (f.ability >= 0) {
+        this.useAbility(e, this.player, f.ability);
+        if (f.ability === 0) e.dashArmed = 0.8;
+      }
+    }
+    if (this.ghostIndex >= this.ghost.length) this.ghost = null;
   }
 
   pickAbility(e, dist) {
@@ -636,6 +687,28 @@ export class Battle {
     for (let i = 0; i < 5; i++) {
       const ab = ABILITIES[i];
       const y = 100 + i * 38;
+      const owned = p.abilitySet.includes(i);
+      if (!owned) {
+        drawPanel(g, 24, y, 210, 32, {
+          fill: 'rgba(6,9,15,0.5)',
+          border: 'rgba(150,168,196,0.1)',
+          corners: false,
+        });
+        g.save();
+        g.textBaseline = 'middle';
+        g.strokeStyle = 'rgba(150,168,196,0.14)';
+        g.lineWidth = 1;
+        g.strokeRect(30.5, y + 4.5, 23, 23);
+        g.fillStyle = '#2d3549';
+        g.textAlign = 'center';
+        g.font = '13px sans-serif';
+        g.fillText('🔒', 42, y + 17);
+        g.textAlign = 'left';
+        g.font = '15px sans-serif';
+        g.fillText('？？？', 62, y + 17);
+        g.restore();
+        continue;
+      }
       const ready = p.cd[i] <= 0 && p.mp >= ab.cost;
       drawPanel(g, 24, y, 210, 32, {
         fill: 'rgba(6,9,15,0.72)',
@@ -674,7 +747,8 @@ export class Battle {
     const angles = [-Math.PI / 2, 0, Math.PI / 2, Math.PI, -Math.PI / 2];
     for (let i = 0; i < 5; i++) {
       const ab = ABILITIES[i];
-      const ready = p.cd[i] <= 0 && p.mp >= ab.cost;
+      const owned = p.abilitySet.includes(i);
+      const ready = owned && p.cd[i] <= 0 && p.mp >= ab.cost;
       const x = i === 4 ? cx : cx + Math.cos(angles[i]) * r;
       const y = i === 4 ? cy : cy + Math.sin(angles[i]) * r;
       const s = i === 4 ? 17 : 22;
@@ -688,7 +762,7 @@ export class Battle {
       }
       g.fillStyle = ready ? 'rgba(12,16,26,0.92)' : 'rgba(8,10,16,0.8)';
       g.fillRect(-s, -s, s * 2, s * 2);
-      g.strokeStyle = ready ? ab.color : 'rgba(150,168,196,0.25)';
+      g.strokeStyle = ready ? ab.color : owned ? 'rgba(150,168,196,0.25)' : 'rgba(150,168,196,0.12)';
       g.lineWidth = 2;
       g.strokeRect(-s, -s, s * 2, s * 2);
       g.restore();
@@ -696,9 +770,9 @@ export class Battle {
       g.save();
       g.textAlign = 'center';
       g.textBaseline = 'middle';
-      g.fillStyle = ready ? ab.color : '#3d4760';
+      g.fillStyle = ready ? ab.color : owned ? '#3d4760' : '#2d3549';
       g.font = `${i === 4 ? 13 : 16}px sans-serif`;
-      g.fillText(ab.icon, x, y - 3);
+      g.fillText(owned ? ab.icon : '🔒', x, y - 3);
       g.fillStyle = ready ? '#cfd6e4' : '#3d4760';
       g.font = '10px sans-serif';
       g.fillText(String(i + 1), x, y + s - 4);
@@ -725,7 +799,7 @@ export class Battle {
     const rows = [
       ['J', '攻撃'],
       ['K', 'ガード'],
-      ['1-5', '能力'],
+      ...(this.player.abilitySet.length ? [['1-5', '能力']] : []),
       ['← →', '移動'],
       ['Esc', 'リタイア'],
     ];
