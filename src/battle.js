@@ -596,9 +596,9 @@ export class Battle {
     g.fillText(e.name, 920, 28);
     g.textAlign = 'left';
 
-    drawCenteredText(g, this.label, 480, 40, 'bold 20px sans-serif', '#cfd6e4');
+    drawCenteredText(g, this.label, 480, 92, 'bold 18px sans-serif', '#cfd6e4');
     if (this.mode === 'endless') {
-      drawCenteredText(g, `連続パリィ ${this.parryStreak} / 瞬歩回避 ${this.dodgeDashStreak}`, 480, 62, '12px sans-serif', '#55617a');
+      drawCenteredText(g, `連続パリィ ${this.parryStreak} / 瞬歩回避 ${this.dodgeDashStreak}`, 480, 112, '12px sans-serif', '#55617a');
     }
 
     // 能力スロット
