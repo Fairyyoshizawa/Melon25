@@ -127,27 +127,37 @@ class Game {
   }
 
   chooseEnding(key) {
-    unlockEndless();
+    // ENDLESS が解放されるのは《能力を奪う》を選んだときだけ
     if (key === 'steal') {
+      unlockEndless();
       this.setNoise(true);
       this.showTitleWithGlitch();
       return;
     }
+    save.perfectEchoCleared = true;
     if (key === 'erase') {
-      // 昨日の自分のデータごと消すので、次の周回に持ち越す記録が無くなる
+      // 昨日の自分のデータごと消すので、まねされる記録が残らない
       this.storyGhosts = [];
       save.bestDay = 0;
-      persist();
     }
+    persist();
     this.setNoise(false);
+    const happy = key === 'erase';
     this.screen = new ResultScreen(this, {
-      title: key === 'destroy' ? 'ECHO 消滅' : '記録 消去',
-      lines:
-        key === 'destroy'
-          ? ['昨日の自分は、二度と現れない。', '手元に残ったのは、剣だけだった。']
-          : ['積み上げた 10 日ぶんの記録が消えた。', 'まねされるものは、もう何も無い。'],
+      title: happy ? 'TRUE END — 昨日を手放す' : 'BAD END — 昨日を斬る',
+      lines: happy
+        ? [
+            '積み上げた 10 日ぶんの記録が消えた。',
+            'まねされるものは、もう何も無い。',
+            '明日の自分は、はじめて自分のものになった。',
+          ]
+        : [
+            'エコーは砕け、昨日の自分は二度と現れない。',
+            '手元に残ったのは、剣だけだった。',
+            '超える相手を失った剣は、もう振るう先が無い。',
+          ],
       items: [{ key: 'title', label: 'タイトルへ' }],
-      onSelect: () => this.showTitle({ selectKey: 'endless' }),
+      onSelect: () => this.showTitle({ selectKey: 'play' }),
     });
   }
 
