@@ -1,5 +1,5 @@
 const down = new Set();
-const pressedThisFrame = new Set();
+const pressedThisFrame = new Map();
 
 const CODE_ALIASES = {
   ArrowLeft: 'left',
@@ -31,7 +31,7 @@ export function initInput(target = window) {
     const name = nameOf(e.code);
     if (!name) return;
     e.preventDefault();
-    if (!down.has(name)) pressedThisFrame.add(name);
+    if (!down.has(name)) pressedThisFrame.set(name, (pressedThisFrame.get(name) || 0) + 1);
     down.add(name);
   });
   target.addEventListener('keyup', (e) => {
@@ -51,7 +51,12 @@ export function isDown(name) {
 }
 
 export function wasPressed(name) {
-  return pressedThisFrame.has(name);
+  return (pressedThisFrame.get(name) || 0) > 0;
+}
+
+// 1フレーム中に複数回押された入力も取りこぼさない
+export function pressCount(name) {
+  return pressedThisFrame.get(name) || 0;
 }
 
 export function endFrame() {

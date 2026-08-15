@@ -124,8 +124,8 @@ class Game {
   startEndless(day = 1) {
     if (day === 1) this.endlessProfile = [0, 0, 0, 0, 0];
     this.endlessDay = day;
-    const hp = Math.min(420, 90 + day * 6);
-    const damage = 9 + day * 0.35;
+    const hp = Math.min(420, 80 + day * 6);
+    const damage = 8 + day * 0.3;
     const speed = Math.min(310, 200 + day * 2);
     this.screen = new Battle({
       mode: 'endless',
@@ -219,4 +219,5 @@ class Game {
 
 initInput(window);
 const game = new Game(document.getElementById('game'), document.getElementById('noise'));
+window.echoGame = game; // デバッグ・動作確認用
 game.start();
