@@ -1,6 +1,13 @@
 import { initInput, endFrame } from './input.js';
 import { Battle } from './battle.js';
-import { TitleScreen, AchievementsScreen, SettingsScreen, EndingChoiceScreen, ResultScreen } from './screens.js';
+import {
+  TitleScreen,
+  AchievementsScreen,
+  SettingsScreen,
+  EndingChoiceScreen,
+  EndingScreen,
+  ResultScreen,
+} from './screens.js';
 import { save, unlockEndless, unlockAchievement, recordDay, persist } from './save.js';
 import { getAchievement, SURVIVAL_THRESHOLDS } from './achievements.js';
 import { pushToast, updateToasts, drawToasts } from './ui.js';
@@ -135,29 +142,84 @@ class Game {
       this.showTitleWithGlitch();
       return;
     }
-    if (key === 'erase') {
-      // 昨日の自分のデータごと消すので、まねされる記録が残らない
-      this.storyGhosts = [];
-      save.bestDay = 0;
-      persist();
+    if (key === 'destroy') {
+      this.setNoise(true);
+      this.showBadEnd();
+      return;
     }
+    // 記録も能力も残さないので、0 時にコピーされる「昨日」が存在しない
+    this.storyGhosts = [];
+    save.bestDay = 0;
+    persist();
     this.setNoise(false);
-    const happy = key === 'erase';
-    this.screen = new ResultScreen(this, {
-      title: happy ? 'TRUE END — 昨日を手放す' : 'BAD END — 昨日を斬る',
-      lines: happy
-        ? [
-            '積み上げた 10 日ぶんの記録が消えた。',
-            'まねされるものは、もう何も無い。',
-            '明日の自分は、はじめて自分のものになった。',
-          ]
-        : [
-            'エコーは砕け、昨日の自分は二度と現れない。',
-            '手元に残ったのは、剣だけだった。',
-            '超える相手を失った剣は、もう振るう先が無い。',
+    this.showTrueEnd();
+  }
+
+  showBadEnd() {
+    this.screen = new EndingScreen(this, {
+      beats: [
+        {
+          figure: true,
+          rim: 'rgba(196,107,255,0.45)',
+          heading: 'エコーを破壊する',
+          lines: [
+            'PERFECT ECHO は砕けた。',
+            '砕けた破片の向こうに、誰かが立っている。',
+            'たった今 PERFECT ECHO を倒した、主人公自身だ。',
           ],
-      items: [{ key: 'title', label: 'タイトルへ' }],
-      onSelect: () => this.showTitle({ selectKey: 'endless' }),
+        },
+        {
+          dark: true,
+          heading: 'エコーを何体斬っても意味がない',
+          lines: [
+            '原因はエコーではなかった。',
+            '昨日を記録してしまう、この世界のほうだ。',
+          ],
+        },
+        {
+          dark: true,
+          clock: true,
+          heading: 'DAY 12',
+          lines: [
+            'また目を覚ます。時計は 0:00:00 のまま動かない。',
+            '今度のエコーは、PERFECT ECHO を倒した経験まで持っている。',
+            'BAD END — ループは終わらない。',
+          ],
+        },
+      ],
+      onDone: () => this.showTitle({ selectKey: 'endless' }),
+    });
+  }
+
+  showTrueEnd() {
+    this.screen = new EndingScreen(this, {
+      beats: [
+        {
+          heading: '記録を消す',
+          lines: [
+            '10 日ぶんの戦闘記録を消した。',
+            '5 つの能力も、すべて手放した。',
+            '残ったのは、何も覚えていない自分だけ。',
+          ],
+        },
+        {
+          dark: true,
+          clock: true,
+          heading: '0 時',
+          lines: ['コピーする「昨日」が、どこにも存在しない。'],
+        },
+        {
+          dark: true,
+          clock: true,
+          tick: true,
+          heading: 'TRUE END — ループ終了',
+          lines: [
+            '初めて時間が進んだ。',
+            '明日は、まだ誰の記録でもない。',
+          ],
+        },
+      ],
+      onDone: () => this.showTitle({ selectKey: 'endless' }),
     });
   }
 
