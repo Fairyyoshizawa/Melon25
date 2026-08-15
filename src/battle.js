@@ -67,6 +67,13 @@ function ghostActionsFrom(frames) {
   return acts;
 }
 
+// 昨日の行動のうちどれだけが攻撃だったかを、そのまま攻撃頻度にする
+function ghostAggression(acts) {
+  if (!acts || !acts.length) return 0.35;
+  const attacks = acts.filter((a) => a.type === 'attack').length;
+  return clamp(0.25 + (attacks / acts.length) * 0.7, 0.25, 0.95);
+}
+
 function recoverOf(f) {
   return f.comboCount >= COMBO_LIMIT ? COMBO_RECOVER : ATTACK_RECOVER;
 }
@@ -169,6 +176,8 @@ export class Battle {
     this.recording = [];
     this.ghost = config.ghost && config.ghost.length ? config.ghost : null;
     this.ghostActions = this.ghost ? ghostActionsFrom(this.ghost) : null;
+    // 昨日の攻めっ気は、記録を使い切ったあとの AI にも引き継ぐ
+    this.attackChance = ghostAggression(this.ghostActions);
     this.ghostIndex = 0;
     this.ghostWait = 0;
     this.ghostHold = 0;
@@ -320,7 +329,7 @@ export class Battle {
         }
       }
       if (dist <= ATTACK_RANGE - 8) {
-        if (Math.random() < 0.35) this.startAttack(e);
+        if (Math.random() < this.attackChance) this.startAttack(e);
         else e.x -= e.dir * e.speed * dt * 0.5;
       } else {
         e.x += e.dir * e.speed * dt * 0.7;
@@ -359,8 +368,9 @@ export class Battle {
     }
 
     const act = this.ghostActions[this.ghostIndex];
-    // 昨日は「2 回振られたあとにガード」なら、今日も 2 回振られるまで待つ
-    if (this.playerSwings < act.foeSwings) {
+    // 昨日は「2 回振られたあとにガード」なら、今日も 2 回振られるまで待つ。
+    // 待つのは相手の攻撃への反応だけで、自分からの攻めは相手待ちにしない
+    if (act.type === 'parry' && this.playerSwings < act.foeSwings) {
       this.approach(dt, dist);
       this.ghostHold += dt;
       if (this.ghostHold > 4) this.consumeGhost();
@@ -401,8 +411,8 @@ export class Battle {
     this.ghostIndex++;
     this.ghostHold = 0;
     const next = this.ghostActions[this.ghostIndex];
-    // 連打にならないよう、行動と行動の間に必ず間を取る
-    this.ghostWait = next ? clamp(next.gap, 0.3, 1.4) : 0;
+    // 昨日の間隔をそのまま写す。連打していたなら今日も連打になる
+    this.ghostWait = next ? clamp(next.gap, 0, 1.4) : 0;
   }
 
   // 空振りが確定した連撃は最後まで振らずに切り上げる
