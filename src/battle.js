@@ -117,6 +117,12 @@ export class Battle {
     this.timestopKill = false;
     this.mirrorAfterimage = false;
     this.pendingUnlocks = [];
+
+    // 昨日の自分＝前回の戦闘で記録したプレイヤーの操作。左右反転して再生する。
+    this.recording = [];
+    this.ghost = config.ghost && config.ghost.length ? config.ghost : null;
+    this.ghostIndex = 0;
+    this.fightTime = 0;
   }
 
   finish(result) {
@@ -148,6 +154,7 @@ export class Battle {
       return;
     }
 
+    this.fightTime += dt;
     this.handlePlayer(dt);
     this.handleEcho(dt);
     this.stepFighter(this.player, this.echo, dt, true);
@@ -170,6 +177,19 @@ export class Battle {
 
   handlePlayer(dt) {
     const p = this.player;
+    const frame = {
+      t: this.fightTime,
+      dt,
+      vx: (isDown('left') ? -1 : 0) + (isDown('right') ? 1 : 0),
+      attack: wasPressed('attack'),
+      parry: wasPressed('parry'),
+      ability: -1,
+    };
+    for (let i = 0; i < 5; i++) {
+      if (wasPressed(`ability${i + 1}`)) frame.ability = i;
+    }
+    this.recording.push(frame);
+
     if (!this.canAct(p)) return;
     if (p.state === 'idle') {
       let vx = 0;
@@ -188,6 +208,10 @@ export class Battle {
   }
 
   handleEcho(dt) {
+    if (this.ghost) {
+      this.replayGhost();
+      return;
+    }
     const e = this.echo;
     if (!this.canAct(e)) return;
     const p = this.player;
@@ -219,6 +243,33 @@ export class Battle {
         e.x += e.dir * e.speed * dt;
       }
     }
+  }
+
+  // 記録済みの操作を鏡写しで再生する。記録を使い切ったら通常 AI に戻す。
+  replayGhost() {
+    const e = this.echo;
+    while (this.ghostIndex < this.ghost.length && this.ghost[this.ghostIndex].t <= this.fightTime) {
+      const f = this.ghost[this.ghostIndex++];
+      if (!this.canAct(e)) continue;
+      const vx = -f.vx;
+      if (e.state === 'idle') {
+        if (vx !== 0) {
+          e.x += vx * e.speed * f.dt;
+          e.dir = vx > 0 ? 1 : -1;
+        }
+        if (f.attack) {
+          e.dir = this.player.x > e.x ? 1 : -1;
+          this.startAttack(e);
+        } else if (f.parry) {
+          this.startParry(e);
+        }
+      }
+      if (f.ability >= 0) {
+        this.useAbility(e, this.player, f.ability);
+        if (f.ability === 0) e.dashArmed = 0.8;
+      }
+    }
+    if (this.ghostIndex >= this.ghost.length) this.ghost = null;
   }
 
   pickAbility(e, dist) {
