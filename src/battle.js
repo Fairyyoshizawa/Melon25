@@ -494,6 +494,8 @@ export class Battle {
     switch (idx) {
       case 0: // 瞬歩
         f.x = clamp(f.x + f.dir * DASH_DISTANCE, ARENA_L, ARENA_R);
+        // 相手を追い越したら振り向く（背後を取ったまま背中を向けない）
+        if (other.x !== f.x) f.dir = other.x > f.x ? 1 : -1;
         f.fx.iframe = DASH_IFRAME;
         f.fx.dashTrail = 0.25;
         if (f.isEcho) f.dashArmed = 0.8;
