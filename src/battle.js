@@ -23,7 +23,7 @@ const BODY_W = 40;
 
 // 反射神経ではなく「見てから判断する」テンポ。
 // プレイヤーもエコーも同じ振りかぶりで、読み合いの条件を揃える。
-const ATTACK_WINDUP = 0.5;
+const ATTACK_WINDUP = 0.4;
 const ATTACK_ACTIVE = 0.12;
 const ATTACK_RECOVER = 0.42;
 const COMBO_LIMIT = 3; // 連撃は 3 撃まで
