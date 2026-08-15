@@ -27,7 +27,7 @@ function storyStage(day) {
     echoName: last ? 'PERFECT ECHO' : day >= 6 ? 'ECHO+' : 'ECHO',
     echoHp: last ? 170 : 60 + day * 9,
     echoDamage: 7 + day * 0.6,
-    echoSpeed: Math.min(240, 160 + day * 8),
+    echoSpeed: Math.min(210, 150 + day * 6),
     echoAbilities: last ? abilitiesUpTo(ABILITIES.length) : abilitiesUpTo(day - 2),
     echoColor: last ? '#c46bff' : undefined,
     aiReaction: Math.max(0.26, 0.55 - day * 0.03),
@@ -136,7 +136,7 @@ class Game {
     this.endlessDay = day;
     const hp = Math.min(420, 80 + day * 6);
     const damage = 8 + day * 0.3;
-    const speed = Math.min(310, 200 + day * 2);
+    const speed = Math.min(260, 190 + day * 2);
     this.screen = new Battle({
       mode: 'endless',
       day,
@@ -149,11 +149,11 @@ class Game {
       echoColor: '#ff6b8a',
       playerAbilities: abilitiesUpTo(ABILITIES.length),
       ghost: this.endlessGhost,
-      aiReaction: Math.max(0.12, 0.42 - day * 0.008),
+      aiReaction: Math.max(0.2, 0.5 - day * 0.008),
       aiWeights: this.endlessProfile.map((c) => 1 + c * 1.5),
       onEnd: (e) => this.onEndlessEnd(e),
     });
-    this.screen.aiThink = Math.max(0.14, 0.45 - day * 0.008);
+    this.screen.aiThink = Math.max(0.45, 0.9 - day * 0.008);
   }
 
   onEndlessEnd({ result, battle }) {

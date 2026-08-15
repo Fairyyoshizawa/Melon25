@@ -20,12 +20,17 @@ const ARENA_L = 200;
 const ARENA_R = 800;
 const BODY_W = 40;
 
-// 剣戟は一振りが重い。振りかぶり→当たり判定→硬直で 1 回 0.7 秒ほどかかる。
-const ATTACK_WINDUP = 0.26;
+// 反射神経ではなく「見てから判断する」テンポ。エコーの予備動作は長めに取る。
+const ATTACK_WINDUP = 0.3; // プレイヤーの振りかぶり
+const ECHO_WINDUP = 0.7; // エコーの予備動作（この間に読んで対応する）
 const ATTACK_ACTIVE = 0.12;
-const ATTACK_RECOVER = 0.34;
+const ATTACK_RECOVER = 0.42;
+const COMBO_LIMIT = 3; // 連撃は 3 撃まで
+const COMBO_WINDOW = 0.9; // これ以内に続けて振れば連撃扱い
+const COMBO_RECOVER = 0.9; // 3 撃振り切ったあとの大きな隙
+const CAST_TIME = 0.35; // 能力の発動予告（紫の光）
 const ATTACK_RANGE = 82;
-const PARRY_ACTIVE = 0.22;
+const PARRY_ACTIVE = 0.24;
 const PARRY_RECOVER = 0.34;
 const HITSTUN = 0.3;
 const PARRY_STAGGER = 0.6;
@@ -34,7 +39,7 @@ const MP_REGEN = 9;
 
 const MEMORY_FLASH = 0.5; // 記憶再現中に走る紫ノイズの長さ
 const FEINT_TIME = 0.4;
-const APPROACH_RATE = 0.72; // ジリジリ間合いを詰める速度倍率
+const APPROACH_RATE = 0.5; // ジリジリ間合いを詰める速度倍率
 const REACH = ATTACK_RANGE - 10;
 const COMBO_GAP = 0.9; // これ以内に続く斬撃は同じコンボ扱い
 
@@ -57,6 +62,15 @@ function ghostActionsFrom(frames) {
     }
   }
   return acts;
+}
+
+// エコーは予備動作が長い。同じ状態機械を使いながら振りかぶりだけを分ける。
+function windupOf(f) {
+  return f.isEcho ? ECHO_WINDUP : ATTACK_WINDUP;
+}
+
+function recoverOf(f) {
+  return f.comboCount >= COMBO_LIMIT ? COMBO_RECOVER : ATTACK_RECOVER;
 }
 
 function makeFighter(opts) {
@@ -88,7 +102,11 @@ function makeFighter(opts) {
       flame: 0,
       dashTrail: 0,
       memory: 0,
+      telegraph: 0,
     },
+    comboCount: 0,
+    lastSwingAt: -99,
+    castIdx: -1,
     usedAbilities: new Set(),
     lastAfterimageAt: -99,
     dashArmed: 0,
@@ -133,7 +151,7 @@ export class Battle {
 
     this.aiWeights = config.aiWeights || [1, 1, 1, 1, 1];
     this.aiReaction = config.aiReaction || 0.35;
-    this.aiThink = 0.4;
+    this.aiThink = 0.8;
     this.aiTimer = 0;
 
     // 実績・戦績トラッキング
@@ -283,10 +301,10 @@ export class Battle {
         }
       }
       if (dist <= ATTACK_RANGE - 8) {
-        if (Math.random() < 0.5) this.startAttack(e);
-        else e.x -= e.dir * e.speed * dt * 0.6;
+        if (Math.random() < 0.35) this.startAttack(e);
+        else e.x -= e.dir * e.speed * dt * 0.5;
       } else {
-        e.x += e.dir * e.speed * dt;
+        e.x += e.dir * e.speed * dt * 0.7;
       }
     }
   }
@@ -300,7 +318,7 @@ export class Battle {
         e.state === 'attack' &&
         !e.swingHit &&
         !this.comboCut &&
-        e.stateTime >= ATTACK_WINDUP + ATTACK_ACTIVE &&
+        e.stateTime >= ECHO_WINDUP + ATTACK_ACTIVE &&
         dist > ATTACK_RANGE + 30
       ) {
         this.cutGhostCombo();
@@ -352,7 +370,8 @@ export class Battle {
     this.ghostIndex++;
     this.ghostHold = 0;
     const next = this.ghostActions[this.ghostIndex];
-    this.ghostWait = next ? clamp(next.gap, 0.05, 1.0) : 0;
+    // 連打にならないよう、行動と行動の間に必ず間を取る
+    this.ghostWait = next ? clamp(next.gap, 0.3, 1.4) : 0;
   }
 
   // 空振りが確定した連撃は最後まで振らずに切り上げる
@@ -377,7 +396,7 @@ export class Battle {
         return true;
       }
     }
-    if (dist <= REACH && Math.random() < 0.012) {
+    if (dist <= REACH && Math.random() < 0.006) {
       this.startAttack(e);
       return true;
     }
@@ -430,6 +449,9 @@ export class Battle {
   }
 
   startAttack(f) {
+    if (this.time - f.lastSwingAt > COMBO_WINDOW) f.comboCount = 0;
+    f.comboCount++;
+    f.lastSwingAt = this.time;
     f.state = 'attack';
     f.stateTime = 0;
     f.swingHit = false;
@@ -460,6 +482,14 @@ export class Battle {
       this.playerAbilityCounts[idx]++;
     }
 
+    // 紫の光と音で予告してから発動する
+    f.state = 'cast';
+    f.stateTime = 0;
+    f.castIdx = idx;
+    f.fx.telegraph = CAST_TIME;
+  }
+
+  applyAbility(f, other, idx) {
     switch (idx) {
       case 0: // 瞬歩
         f.x = clamp(f.x + f.dir * DASH_DISTANCE, ARENA_L, ARENA_R);
@@ -495,7 +525,7 @@ export class Battle {
   }
 
   stepFighter(f, other, dt, active) {
-    for (const key of ['iframe', 'reflect', 'afterimage', 'frozen', 'timestopSelf', 'dashTrail', 'memory']) {
+    for (const key of ['iframe', 'reflect', 'afterimage', 'frozen', 'timestopSelf', 'dashTrail', 'memory', 'telegraph']) {
       if (f.fx[key] > 0) f.fx[key] = Math.max(0, f.fx[key] - dt);
     }
     for (let i = 0; i < f.cd.length; i++) {
@@ -510,7 +540,8 @@ export class Battle {
     f.stateTime += dt;
     if (f.state === 'attack') {
       const t = f.stateTime;
-      if (t >= ATTACK_WINDUP && t < ATTACK_WINDUP + ATTACK_ACTIVE && !f.swingHit) {
+      const w = windupOf(f);
+      if (t >= w && t < w + ATTACK_ACTIVE && !f.swingHit) {
         const dist = Math.abs(other.x - f.x);
         const facing = Math.sign(other.x - f.x) === f.dir || dist < 20;
         if (dist <= ATTACK_RANGE && facing) {
@@ -518,7 +549,7 @@ export class Battle {
           this.resolveHit(f, other);
         }
       }
-      if (t >= ATTACK_WINDUP + ATTACK_ACTIVE + ATTACK_RECOVER) {
+      if (t >= w + ATTACK_ACTIVE + recoverOf(f)) {
         if (f.isEcho && !f.swingHit) this.echoWhiffAt = this.time;
         if (f.isEcho && f.swingIsDash && !f.swingHit) {
           this.dodgeDashStreak++;
@@ -527,6 +558,14 @@ export class Battle {
         f.state = 'idle';
         f.stateTime = 0;
         f.swingIsDash = false;
+      }
+    } else if (f.state === 'cast') {
+      if (f.stateTime >= CAST_TIME) {
+        const idx = f.castIdx;
+        f.castIdx = -1;
+        f.state = 'idle';
+        f.stateTime = 0;
+        if (idx >= 0) this.applyAbility(f, other, idx);
       }
     } else if (f.state === 'feint') {
       if (f.stateTime >= FEINT_TIME) {
@@ -726,7 +765,8 @@ export class Battle {
     if (f.fx.dashTrail > 0) figure(f.x - f.dir * 60, Math.min(0.5, f.fx.dashTrail * 1.6));
 
     const attacking = f.state === 'attack';
-    const active = attacking && f.stateTime >= ATTACK_WINDUP && f.stateTime < ATTACK_WINDUP + ATTACK_ACTIVE;
+    const w = windupOf(f);
+    const active = attacking && f.stateTime >= w && f.stateTime < w + ATTACK_ACTIVE;
     figure(f.x, f.fx.frozen > 0 ? 0.6 : 1, { raise: (attacking && !active) || f.state === 'feint' });
 
     // 昨日の行動を再現している間だけ、身体に紫のノイズが走る
@@ -767,11 +807,39 @@ export class Battle {
       g.strokeRect(f.x - 26, FOOT_Y - FIGURE_H - 10, 52, FIGURE_H + 20);
     }
     if (attacking) {
-      g.strokeStyle = active ? (f.fx.flame > 0 ? '#ff7a3c' : '#ffffff') : 'rgba(255,255,255,0.22)';
-      g.lineWidth = active ? 6 : 2;
+      // 振りかぶりの進み具合をアークの太さと大きさで見せる（構えを見て判断できるように）
+      const prog = Math.min(1, f.stateTime / w);
+      g.strokeStyle = active
+        ? f.fx.flame > 0
+          ? '#ff7a3c'
+          : '#ffffff'
+        : f.isEcho
+          ? `rgba(196,107,255,${0.25 + prog * 0.55})`
+          : `rgba(255,255,255,${0.18 + prog * 0.3})`;
+      g.lineWidth = active ? 6 : 2 + prog * 2.5;
       g.beginPath();
-      g.arc(f.x, cy, ATTACK_RANGE * (active ? 1 : 0.7), f.dir > 0 ? -0.8 : Math.PI - 0.8, f.dir > 0 ? 0.8 : Math.PI + 0.8);
+      g.arc(
+        f.x,
+        cy,
+        ATTACK_RANGE * (active ? 1 : 0.45 + prog * 0.5),
+        f.dir > 0 ? -0.8 : Math.PI - 0.8,
+        f.dir > 0 ? 0.8 : Math.PI + 0.8,
+      );
       g.stroke();
+    }
+    if (f.fx.telegraph > 0) {
+      // 能力の発動予告。紫の輪が縮んで、消えた瞬間に効果が出る。
+      const t = f.fx.telegraph / CAST_TIME;
+      g.save();
+      g.globalAlpha = 0.85;
+      g.shadowColor = '#c46bff';
+      g.shadowBlur = 20;
+      g.strokeStyle = '#c46bff';
+      g.lineWidth = 3;
+      g.beginPath();
+      g.arc(f.x, cy, 30 + t * 46, 0, Math.PI * 2);
+      g.stroke();
+      g.restore();
     }
     if (f.state === 'parry' && f.stateTime <= PARRY_ACTIVE) {
       g.shadowColor = '#ffe86b';
