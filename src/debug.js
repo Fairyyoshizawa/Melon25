@@ -88,7 +88,7 @@ export class DebugScreen {
   items() {
     const hp = debug.echoHp > 0 ? `${debug.echoHp}` : '既定';
     return [
-      { key: 'perfect', label: 'PERFECT ECHO TEST（DAY 10・両者5能力・記録あり）', accent: true },
+      { key: 'perfect', label: 'PERFECT ECHO TEST（DAY 10・両者5能力・記録あり・時止め多用の傾向）', accent: true },
       { key: 'ending', label: 'ボス撃破状態から開始（エンディング直行）', accent: true },
       { key: 'story', label: `ストーリー DAY ${this.day} を開始`, value: '← → で DAY 変更' },
       { key: 'endless', label: `ENDLESS DAY ${this.endlessDay} を開始`, value: '← → で DAY 変更' },
@@ -131,6 +131,8 @@ export class DebugScreen {
       debug.playerAbilities = 'all';
       debug.echoAbilities = 'all';
       if (debug.ghost === 'default') debug.ghost = 'sample';
+      // 《時止め》に頼った 9 日間を過ごしたプレイヤーとして PERFECT ECHO を組み立てる
+      this.game.setStoryAbilityProfile([4, 2, 18, 3, 5], 9);
       this.game.startStory(9);
     } else if (key === 'ending') {
       this.game.showEndingChoice();

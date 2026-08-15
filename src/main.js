@@ -44,6 +44,33 @@ function storyStage(day) {
   };
 }
 
+// PERFECT ECHO は DAY 1〜9 のプレイヤーの能力の使い方をそのまま身につけている。
+// 多用した能力ほど選ばれやすく、そもそも能力に頼っていたなら発動の間隔も短くなる。
+function perfectEchoProfile(counts, days) {
+  const total = counts.reduce((s, c) => s + c, 0);
+  if (total === 0 || days <= 0) {
+    // 剣だけで来た相手の記憶なので、エコーもほとんど能力を使わない
+    return { weights: [1, 1, 1, 1, 1], think: 1.7, topIdx: -1 };
+  }
+  const weights = counts.map((c) => 0.3 + 3.4 * (c / total));
+  const perDay = total / days;
+  const think = Math.max(0.4, Math.min(1.7, 1.35 - perDay * 0.11));
+  let topIdx = 0;
+  counts.forEach((c, i) => {
+    if (c > counts[topIdx]) topIdx = i;
+  });
+  return { weights, think, topIdx };
+}
+
+function announcePerfectEchoProfile(profile, counts) {
+  if (profile.topIdx === -1) {
+    pushToast('PERFECT ECHO', '能力を使わなかった 9 日間を覚えている。剣で来る', 'achievement');
+    return;
+  }
+  const ab = ABILITIES[profile.topIdx];
+  pushToast(`PERFECT ECHO`, `${ab.icon} ${ab.name} を ${counts[profile.topIdx]} 回使った昨日を覚えている`, 'achievement');
+}
+
 class Game {
   constructor(canvas, noiseEl) {
     this.canvas = canvas;
@@ -52,6 +79,8 @@ class Game {
     this.screen = new TitleScreen(this);
     this.endlessProfile = [0, 0, 0, 0, 0];
     this.storyGhosts = []; // stageIndex -> その日のエコーが再生する前日の操作記録
+    this.storyAbilityCounts = [0, 0, 0, 0, 0]; // DAY 1〜9 でプレイヤーが能力を使った回数
+    this.storyAbilityDays = 0;
     this.endlessGhost = null;
     this.last = performance.now();
   }
@@ -87,9 +116,18 @@ class Game {
 
   startStory(stageIndex = 0) {
     this.storyStage = stageIndex;
-    if (stageIndex === 0) this.storyGhosts = [];
+    if (stageIndex === 0) {
+      this.storyGhosts = [];
+      this.storyAbilityCounts = [0, 0, 0, 0, 0];
+      this.storyAbilityDays = 0;
+    }
     const stage = storyStage(stageIndex + 1);
     this.storyLabel = stage.label;
+    const isPerfect = stageIndex + 1 === STORY_DAYS;
+    const profile = isPerfect
+      ? perfectEchoProfile(this.storyAbilityCounts, this.storyAbilityDays)
+      : { weights: [1, 1, 1, 1, 1], think: 0.8, topIdx: -1 };
+    if (isPerfect) announcePerfectEchoProfile(profile, this.storyAbilityCounts);
     this.screen = new Battle({
       mode: 'story',
       day: stageIndex + 1,
@@ -103,9 +141,16 @@ class Game {
       playerAbilities: debugAbilities(debug.playerAbilities, abilitiesUpTo(stageIndex)),
       ghost: debugGhost(this.storyGhosts[stageIndex]),
       aiReaction: stage.aiReaction,
-      aiWeights: [1, 1, 1, 1, 1],
+      aiWeights: profile.weights,
+      aiThink: profile.think,
       onEnd: (e) => this.onStoryEnd(e),
     });
+  }
+
+  // デバッグから DAY 10 だけを始めるとき用に、9 日ぶんの能力使用傾向を差し込む
+  setStoryAbilityProfile(counts, days) {
+    this.storyAbilityCounts = counts.slice();
+    this.storyAbilityDays = days;
   }
 
   onStoryEnd({ result, battle }) {
@@ -128,6 +173,11 @@ class Game {
     if (this.storyStage < STORY_DAYS - 1) {
       // 今日の自分が、明日のエコーになる
       this.storyGhosts[this.storyStage + 1] = battle.recording;
+      // 能力の使い方は日をまたいで積み上がり、最終日の PERFECT ECHO が受け継ぐ
+      battle.playerAbilityCounts.forEach((c, i) => {
+        this.storyAbilityCounts[i] += c;
+      });
+      this.storyAbilityDays++;
       announceAbility(this.storyStage + 1);
       this.startStory(this.storyStage + 1);
     } else {
@@ -149,6 +199,8 @@ class Game {
     }
     // 記録も能力も残さないので、0 時にコピーされる「昨日」が存在しない
     this.storyGhosts = [];
+    this.storyAbilityCounts = [0, 0, 0, 0, 0];
+    this.storyAbilityDays = 0;
     save.bestDay = 0;
     persist();
     this.setNoise(false);
