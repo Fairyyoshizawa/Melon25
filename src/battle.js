@@ -364,14 +364,15 @@ export class Battle {
       return;
     }
 
+    const bucket = this.ghostBucket();
+    const act = bucket[this.ghostStep];
+
     this.ghostWait -= dt;
-    if (this.ghostWait > 0) {
+    // ガードは相手の振りに合わせるので、昨日の間隔では待たせない
+    if (this.ghostWait > 0 && act.type !== 'parry') {
       this.approach(dt, dist);
       return;
     }
-
-    const bucket = this.ghostBucket();
-    const act = bucket[this.ghostStep];
     if (!this.actionFits(act, dist)) {
       this.ghostStall += dt;
       // ガードしか記録が無い状況で相手が振ってこないと固まるので、自分から動く
@@ -400,7 +401,16 @@ export class Battle {
 
   actionFits(act, dist) {
     if (act.type === 'attack') return dist <= REACH;
-    if (act.type === 'parry') return this.player.state === 'attack' && dist < ATTACK_RANGE + 30;
+    if (act.type === 'parry') {
+      // 弾けるのは受け止めた瞬間だけなので、当たる直前に構え始める
+      const untilHit = ATTACK_WINDUP - this.player.stateTime;
+      return (
+        this.player.state === 'attack' &&
+        untilHit <= PARRY_ACTIVE - 0.06 &&
+        untilHit > -ATTACK_ACTIVE &&
+        dist < ATTACK_RANGE + 30
+      );
+    }
     const ab = ABILITIES[act.idx];
     const e = this.echo;
     if (!e.abilitySet.includes(act.idx) || e.cd[act.idx] > 0 || e.mp < ab.cost) return false;
