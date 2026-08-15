@@ -1,7 +1,7 @@
 import { initInput, endFrame } from './input.js';
 import { Battle } from './battle.js';
-import { TitleScreen, AchievementsScreen, SettingsScreen, StealChoiceScreen, ResultScreen } from './screens.js';
-import { save, unlockEndless, unlockAchievement, recordDay } from './save.js';
+import { TitleScreen, AchievementsScreen, SettingsScreen, EndingChoiceScreen, ResultScreen } from './screens.js';
+import { save, unlockEndless, unlockAchievement, recordDay, persist } from './save.js';
 import { getAchievement, SURVIVAL_THRESHOLDS } from './achievements.js';
 import { pushToast, updateToasts, drawToasts } from './ui.js';
 import { getMenuScene } from './scene.js';
@@ -70,8 +70,8 @@ class Game {
     this.screen = new DebugScreen(this);
   }
 
-  showStealChoice() {
-    this.screen = new StealChoiceScreen(this);
+  showEndingChoice() {
+    this.screen = new EndingChoiceScreen(this);
   }
 
   // ---------- ストーリー ----------
@@ -122,14 +122,43 @@ class Game {
       announceAbility(this.storyStage + 1);
       this.startStory(this.storyStage + 1);
     } else {
-      this.showStealChoice();
+      this.showEndingChoice();
     }
   }
 
-  stealPower() {
-    unlockEndless();
-    this.setNoise(true);
-    this.showTitleWithGlitch();
+  chooseEnding(key) {
+    // ENDLESS が解放されるのは《能力を奪う》を選んだときだけ
+    if (key === 'steal') {
+      unlockEndless();
+      this.setNoise(true);
+      this.showTitleWithGlitch();
+      return;
+    }
+    save.perfectEchoCleared = true;
+    if (key === 'erase') {
+      // 昨日の自分のデータごと消すので、まねされる記録が残らない
+      this.storyGhosts = [];
+      save.bestDay = 0;
+    }
+    persist();
+    this.setNoise(false);
+    const happy = key === 'erase';
+    this.screen = new ResultScreen(this, {
+      title: happy ? 'TRUE END — 昨日を手放す' : 'BAD END — 昨日を斬る',
+      lines: happy
+        ? [
+            '積み上げた 10 日ぶんの記録が消えた。',
+            'まねされるものは、もう何も無い。',
+            '明日の自分は、はじめて自分のものになった。',
+          ]
+        : [
+            'エコーは砕け、昨日の自分は二度と現れない。',
+            '手元に残ったのは、剣だけだった。',
+            '超える相手を失った剣は、もう振るう先が無い。',
+          ],
+      items: [{ key: 'title', label: 'タイトルへ' }],
+      onSelect: () => this.showTitle({ selectKey: 'play' }),
+    });
   }
 
   showTitleWithGlitch() {
