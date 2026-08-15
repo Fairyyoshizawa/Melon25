@@ -20,9 +20,9 @@ const ARENA_L = 200;
 const ARENA_R = 800;
 const BODY_W = 40;
 
-// 反射神経ではなく「見てから判断する」テンポ。エコーの予備動作は長めに取る。
-const ATTACK_WINDUP = 0.3; // プレイヤーの振りかぶり
-const ECHO_WINDUP = 0.7; // エコーの予備動作（この間に読んで対応する）
+// 反射神経ではなく「見てから判断する」テンポ。
+// プレイヤーもエコーも同じ振りかぶりで、読み合いの条件を揃える。
+const ATTACK_WINDUP = 0.5;
 const ATTACK_ACTIVE = 0.12;
 const ATTACK_RECOVER = 0.42;
 const COMBO_LIMIT = 3; // 連撃は 3 撃まで
@@ -62,11 +62,6 @@ function ghostActionsFrom(frames) {
     }
   }
   return acts;
-}
-
-// エコーは予備動作が長い。同じ状態機械を使いながら振りかぶりだけを分ける。
-function windupOf(f) {
-  return f.isEcho ? ECHO_WINDUP : ATTACK_WINDUP;
 }
 
 function recoverOf(f) {
@@ -318,7 +313,7 @@ export class Battle {
         e.state === 'attack' &&
         !e.swingHit &&
         !this.comboCut &&
-        e.stateTime >= ECHO_WINDUP + ATTACK_ACTIVE &&
+        e.stateTime >= ATTACK_WINDUP + ATTACK_ACTIVE &&
         dist > ATTACK_RANGE + 30
       ) {
         this.cutGhostCombo();
@@ -540,7 +535,7 @@ export class Battle {
     f.stateTime += dt;
     if (f.state === 'attack') {
       const t = f.stateTime;
-      const w = windupOf(f);
+      const w = ATTACK_WINDUP;
       if (t >= w && t < w + ATTACK_ACTIVE && !f.swingHit) {
         const dist = Math.abs(other.x - f.x);
         const facing = Math.sign(other.x - f.x) === f.dir || dist < 20;
@@ -765,7 +760,7 @@ export class Battle {
     if (f.fx.dashTrail > 0) figure(f.x - f.dir * 60, Math.min(0.5, f.fx.dashTrail * 1.6));
 
     const attacking = f.state === 'attack';
-    const w = windupOf(f);
+    const w = ATTACK_WINDUP;
     const active = attacking && f.stateTime >= w && f.stateTime < w + ATTACK_ACTIVE;
     figure(f.x, f.fx.frozen > 0 ? 0.6 : 1, { raise: (attacking && !active) || f.state === 'feint' });
 
