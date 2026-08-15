@@ -107,14 +107,6 @@ function drawMenuItem(g, item, x, y, selected, time) {
   g.fillText(item.icon, x + 18, y + MENU_H / 2 + 1);
   g.font = selected || accent ? 'bold 21px sans-serif' : '21px sans-serif';
   g.fillText(item.label, x + 52, y + MENU_H / 2 + 1);
-  if (item.note) {
-    g.shadowBlur = 0;
-    g.fillStyle = item.noteColor || '#8fa0bd';
-    g.font = 'bold 13px sans-serif';
-    g.textAlign = 'right';
-    g.fillText(item.note, x + MENU_W - 18, y + MENU_H / 2 + 1);
-    g.textAlign = 'left';
-  }
   g.restore();
 }
 
@@ -327,9 +319,9 @@ export class EndingChoiceScreen {
     this.game = game;
     this.time = 0;
     this.menu = new Menu([
-      { key: 'erase', icon: '◈', label: '《記録を消す》', note: 'HAPPY END', noteColor: '#8fffc4' },
-      { key: 'destroy', icon: '◇', label: '《エコーを破壊する》', note: 'BAD END', noteColor: '#ff8f9e' },
-      { key: 'steal', icon: '◆', label: '《能力を奪う》', note: 'ENDLESS 解放', accent: '#9e5cff', noteColor: '#d7b3ff' },
+      { key: 'erase', icon: '◈', label: '《記録を消す》' },
+      { key: 'destroy', icon: '◇', label: '《エコーを破壊する》' },
+      { key: 'steal', icon: '◆', label: '《能力を奪う》', accent: '#9e5cff' },
     ]);
   }
 

@@ -127,20 +127,18 @@ class Game {
   }
 
   chooseEnding(key) {
-    // ENDLESS が解放されるのは《能力を奪う》を選んだときだけ
+    unlockEndless();
     if (key === 'steal') {
-      unlockEndless();
       this.setNoise(true);
       this.showTitleWithGlitch();
       return;
     }
-    save.perfectEchoCleared = true;
     if (key === 'erase') {
       // 昨日の自分のデータごと消すので、まねされる記録が残らない
       this.storyGhosts = [];
       save.bestDay = 0;
+      persist();
     }
-    persist();
     this.setNoise(false);
     const happy = key === 'erase';
     this.screen = new ResultScreen(this, {
@@ -157,7 +155,7 @@ class Game {
             '超える相手を失った剣は、もう振るう先が無い。',
           ],
       items: [{ key: 'title', label: 'タイトルへ' }],
-      onSelect: () => this.showTitle({ selectKey: 'play' }),
+      onSelect: () => this.showTitle({ selectKey: 'endless' }),
     });
   }
 
