@@ -30,6 +30,7 @@ const COMBO_LIMIT = 3; // 連撃は 3 撃まで
 const COMBO_WINDOW = 0.9; // これ以内に続けて振れば連撃扱い
 const COMBO_RECOVER = 0.9; // 3 撃振り切ったあとの大きな隙
 const CAST_TIME = 0.35; // 能力の発動予告（紫の光）
+const ACTION_GAP = 0.16; // 行動を終えてから次の行動を出せるまでの間
 const ATTACK_RANGE = 82;
 const PARRY_ACTIVE = 0.24;
 const PARRY_RECOVER = 0.34;
@@ -106,6 +107,7 @@ function makeFighter(opts) {
     usedAbilities: new Set(),
     lastAfterimageAt: -99,
     dashArmed: 0,
+    actLock: 0,
   };
 }
 
@@ -255,11 +257,17 @@ export class Battle {
         p.x += vx * p.speed * dt;
         p.dir = vx > 0 ? 1 : -1;
       }
+      // 1 フレームに出せる行動は 1 つだけ（攻撃しながら能力は出せない）
       if (wasPressed('attack')) this.startAttack(p);
       else if (wasPressed('parry')) this.startParry(p);
-    }
-    for (let i = 0; i < 5; i++) {
-      if (wasPressed(`ability${i + 1}`)) this.useAbility(p, this.echo, i);
+      else {
+        for (let i = 0; i < 5; i++) {
+          if (wasPressed(`ability${i + 1}`)) {
+            this.useAbility(p, this.echo, i);
+            break;
+          }
+        }
+      }
     }
   }
 
@@ -285,6 +293,11 @@ export class Battle {
 
     this.aiTimer -= dt;
     if (e.state === 'idle') {
+      if (e.actLock > 0) {
+        // 前の行動が抜けきるまでは間合いを取るだけ
+        if (dist > ATTACK_RANGE - 8) e.x += e.dir * e.speed * dt * APPROACH_RATE;
+        return;
+      }
       // 相手の攻撃に反応してパリィ／回避
       if (p.state === 'attack' && p.stateTime < ATTACK_WINDUP && dist < ATTACK_RANGE + 20) {
         if (Math.random() < 0.01 / this.aiReaction + this.day * 0.002) {
@@ -324,6 +337,11 @@ export class Battle {
       ) {
         this.cutGhostCombo();
       }
+      return;
+    }
+
+    if (e.actLock > 0) {
+      this.approach(dt, dist);
       return;
     }
 
@@ -450,6 +468,7 @@ export class Battle {
   }
 
   startAttack(f) {
+    if (f.actLock > 0) return;
     if (this.time - f.lastSwingAt > COMBO_WINDOW) f.comboCount = 0;
     f.comboCount++;
     f.lastSwingAt = this.time;
@@ -462,6 +481,7 @@ export class Battle {
   }
 
   startParry(f) {
+    if (f.actLock > 0) return;
     f.state = 'parry';
     f.stateTime = 0;
   }
@@ -469,7 +489,8 @@ export class Battle {
   useAbility(f, other, idx) {
     if (!this.canAct(f)) return;
     if (!f.abilitySet.includes(idx)) return;
-    if (f.state !== 'idle' && !(f.state === 'attack' && idx === 0)) return;
+    // 人間には無理なので、剣を振りながら能力を重ねて出せない
+    if (f.state !== 'idle' || f.actLock > 0) return;
     const ab = ABILITIES[idx];
     if (f.cd[idx] > 0 || f.mp < ab.cost) return;
 
@@ -535,6 +556,7 @@ export class Battle {
       if (f.cd[i] > 0) f.cd[i] = Math.max(0, f.cd[i] - dt);
     }
     if (f.dashArmed > 0) f.dashArmed = Math.max(0, f.dashArmed - dt);
+    if (f.actLock > 0) f.actLock = Math.max(0, f.actLock - dt);
     f.mp = Math.min(f.maxMp, f.mp + MP_REGEN * dt);
     f.x = clamp(f.x, ARENA_L, ARENA_R);
     if (!active || f.state === 'dead') return;
@@ -560,6 +582,7 @@ export class Battle {
         }
         f.state = 'idle';
         f.stateTime = 0;
+        f.actLock = ACTION_GAP;
         f.swingIsDash = false;
       }
     } else if (f.state === 'cast') {
@@ -568,6 +591,7 @@ export class Battle {
         f.castIdx = -1;
         f.state = 'idle';
         f.stateTime = 0;
+        f.actLock = ACTION_GAP;
         if (idx >= 0) this.applyAbility(f, other, idx);
       }
     } else if (f.state === 'feint') {
@@ -579,6 +603,7 @@ export class Battle {
       if (f.stateTime >= PARRY_ACTIVE + PARRY_RECOVER) {
         f.state = 'idle';
         f.stateTime = 0;
+        f.actLock = ACTION_GAP;
       }
     } else if (f.state === 'hitstun') {
       if (f.stateTime >= f.hitstunTime) {
