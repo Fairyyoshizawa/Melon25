@@ -34,6 +34,11 @@ canvas {
   color: #55617a;
 }
 
+#build {
+  margin-left: 8px;
+  color: #35405a;
+}
+
 .noise {
   position: absolute;
   inset: 0;
