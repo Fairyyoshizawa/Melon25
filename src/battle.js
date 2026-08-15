@@ -13,7 +13,7 @@ import { sfx } from './audio.js';
 import { drawBar, drawCenteredText } from './ui.js';
 import { save } from './save.js';
 
-const GROUND_Y = 430;
+const GROUND_Y = 372;
 const ARENA_L = 70;
 const ARENA_R = 890;
 const BODY_W = 34;

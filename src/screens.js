@@ -1,6 +1,6 @@
 import { ACHIEVEMENTS } from './achievements.js';
 import { save, isUnlocked, unlockedCount, persist, resetSave } from './save.js';
-import { wasPressed } from './input.js';
+import { wasPressed, pressCount } from './input.js';
 import { sfx } from './audio.js';
 import { drawCenteredText } from './ui.js';
 
@@ -12,12 +12,10 @@ class Menu {
 
   update() {
     if (!this.items.length) return null;
-    if (wasPressed('up')) {
-      this.index = (this.index - 1 + this.items.length) % this.items.length;
-      sfx.move();
-    }
-    if (wasPressed('down')) {
-      this.index = (this.index + 1) % this.items.length;
+    const moves = pressCount('down') - pressCount('up');
+    if (moves !== 0) {
+      const n = this.items.length;
+      this.index = (((this.index + moves) % n) + n) % n;
       sfx.move();
     }
     if (wasPressed('confirm')) {
