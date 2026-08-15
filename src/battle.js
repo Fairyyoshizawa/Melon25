@@ -51,15 +51,16 @@ function ghostActionsFrom(frames) {
   const acts = [];
   let last = 0;
   for (const f of frames) {
+    const foeSwings = f.foeSwings || 0;
     if (f.ability >= 0) {
-      acts.push({ type: 'ability', idx: f.ability, gap: f.t - last });
+      acts.push({ type: 'ability', idx: f.ability, gap: f.t - last, foeSwings });
       last = f.t;
     }
     if (f.attack) {
-      acts.push({ type: 'attack', gap: f.t - last });
+      acts.push({ type: 'attack', gap: f.t - last, foeSwings });
       last = f.t;
     } else if (f.parry) {
-      acts.push({ type: 'parry', gap: f.t - last });
+      acts.push({ type: 'parry', gap: f.t - last, foeSwings });
       last = f.t;
     }
   }
@@ -176,6 +177,9 @@ export class Battle {
     this.baitCount = 0; // 空振り待ち→反撃をされた回数
     this.feintCd = 0;
     this.fightTime = 0;
+    // 相手に何回振られた時点の行動なのかを覚えておき、同じ状況で再現する
+    this.playerSwings = 0;
+    this.echoSwings = 0;
   }
 
   finish(result) {
@@ -242,6 +246,7 @@ export class Battle {
       attack: wasPressed('attack'),
       parry: wasPressed('parry'),
       ability: -1,
+      foeSwings: this.echoSwings, // この時点で相手に何回振られていたか
     };
     for (let i = 0; i < 5; i++) {
       if (wasPressed(`ability${i + 1}`)) frame.ability = i;
@@ -354,6 +359,13 @@ export class Battle {
     }
 
     const act = this.ghostActions[this.ghostIndex];
+    // 昨日は「2 回振られたあとにガード」なら、今日も 2 回振られるまで待つ
+    if (this.playerSwings < act.foeSwings) {
+      this.approach(dt, dist);
+      this.ghostHold += dt;
+      if (this.ghostHold > 4) this.consumeGhost();
+      return;
+    }
     if (!this.actionFits(act, dist)) {
       // 間合いが合わないので今は出さない。詰めながら少しだけ待つ。
       this.approach(dt, dist);
@@ -478,6 +490,8 @@ export class Battle {
     if (f.isEcho) this.comboCut = false;
     f.swingIsDash = f.dashArmed > 0;
     f.dashArmed = 0;
+    if (f.isEcho) this.echoSwings++;
+    else this.playerSwings++;
   }
 
   startParry(f) {
@@ -745,7 +759,7 @@ export class Battle {
     } else if (this.result === 'win') {
       drawSpacedText(g, 'ECHO 撃破', 480, 250, 'bold 44px sans-serif', '#8fffc4', 6);
     } else if (this.result === 'lose') {
-      drawSpacedText(g, '昨日に負けた', 480, 250, 'bold 44px sans-serif', '#ff6b8a', 6);
+      drawSpacedText(g, '昨日の自分に負けた', 480, 250, 'bold 44px sans-serif', '#ff6b8a', 6);
     }
   }
 

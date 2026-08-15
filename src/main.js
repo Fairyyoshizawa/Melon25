@@ -23,9 +23,11 @@ const STORY_DAYS = 10;
 // DAY n のエコーは「DAY n-1 のプレイヤー」なので、能力も前日のプレイヤーと同じだけ持つ。
 function storyStage(day) {
   const last = day === STORY_DAYS;
+  // DAY 1 には昨日が無いので、まねる記録を持たない ZERO ECHO が相手になる
+  const zero = day === 1;
   return {
-    label: last ? `DAY ${day} — PERFECT ECHO` : `DAY ${day} — 昨日の自分`,
-    echoName: last ? 'PERFECT ECHO' : day >= 6 ? 'ECHO+' : 'ECHO',
+    label: last ? `DAY ${day} — PERFECT ECHO` : zero ? `DAY ${day} — ZERO ECHO` : `DAY ${day} — 昨日の自分`,
+    echoName: last ? 'PERFECT ECHO' : zero ? 'ZERO ECHO' : day >= 6 ? 'ECHO+' : 'ECHO',
     echoHp: last ? 170 : 60 + day * 9,
     echoDamage: 7 + day * 0.6,
     echoSpeed: Math.min(210, 150 + day * 6),
@@ -106,7 +108,7 @@ class Game {
     }
     if (result === 'lose') {
       this.screen = new ResultScreen(this, {
-        title: '昨日に負けた',
+        title: '昨日の自分に負けた',
         lines: [this.storyLabel],
         items: [
           { key: 'retry', label: 'もう一度' },
