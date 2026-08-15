@@ -8,7 +8,7 @@ import {
   EndingScreen,
   ResultScreen,
 } from './screens.js';
-import { save, unlockEndless, unlockAchievement, recordDay, persist } from './save.js';
+import { initSave, save, unlockEndless, unlockAchievement, recordDay, persist } from './save.js';
 import { getAchievement, SURVIVAL_THRESHOLDS } from './achievements.js';
 import { pushToast, updateToasts, drawToasts } from './ui.js';
 import { getMenuScene } from './scene.js';
@@ -388,6 +388,7 @@ class Game {
 }
 
 initInput(window);
+await initSave();
 const game = new Game(document.getElementById('game'), document.getElementById('noise'));
 window.echoGame = game; // デバッグ・動作確認用
 window.echoDebug = debug;
