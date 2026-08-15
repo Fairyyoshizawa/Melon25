@@ -20,15 +20,16 @@ const ARENA_L = 200;
 const ARENA_R = 800;
 const BODY_W = 40;
 
-const ATTACK_WINDUP = 0.13;
-const ATTACK_ACTIVE = 0.09;
-const ATTACK_RECOVER = 0.2;
+// 剣戟は一振りが重い。振りかぶり→当たり判定→硬直で 1 回 0.7 秒ほどかかる。
+const ATTACK_WINDUP = 0.26;
+const ATTACK_ACTIVE = 0.12;
+const ATTACK_RECOVER = 0.34;
 const ATTACK_RANGE = 82;
-const PARRY_ACTIVE = 0.18;
+const PARRY_ACTIVE = 0.22;
 const PARRY_RECOVER = 0.34;
-const HITSTUN = 0.26;
+const HITSTUN = 0.3;
 const PARRY_STAGGER = 0.6;
-const BASE_DAMAGE = 11;
+const BASE_DAMAGE = 14; // 振りが遅くなったぶん一撃を重く
 const MP_REGEN = 9;
 
 function makeFighter(opts) {
