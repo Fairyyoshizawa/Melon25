@@ -65,21 +65,39 @@ function drawMenuItem(g, item, x, y, selected, time) {
   const pulse = 0.55 + 0.45 * Math.sin(time * 3);
   drawPanel(g, x, y, MENU_W, MENU_H, {
     fill: accent
-      ? `rgba(78,32,140,${0.3 + pulse * 0.18})`
+      ? `rgba(78,32,140,${(selected ? 0.46 : 0.3) + pulse * 0.18})`
       : selected
       ? 'rgba(230,238,252,0.14)'
       : 'rgba(8,11,18,0.5)',
-    border: accent ? `rgba(176,120,255,${0.7 + pulse * 0.3})` : selected ? 'rgba(220,232,252,0.75)' : 'rgba(150,168,196,0.3)',
+    border: accent
+      ? `rgba(${selected ? '226,208,255' : '176,120,255'},${0.7 + pulse * 0.3})`
+      : selected
+      ? 'rgba(220,232,252,0.75)'
+      : 'rgba(150,168,196,0.3)',
+    lineWidth: selected ? 2 : 1,
     glow: accent ? '#9e5cff' : null,
     glowBlur: 14 + pulse * 18,
     corners: false,
   });
 
+  // 選択カーソル（強調項目でも位置が分かるように必ず描く）
+  if (selected) {
+    g.save();
+    g.fillStyle = accent ? '#e2d0ff' : '#ffffff';
+    g.beginPath();
+    g.moveTo(x - 16, y + MENU_H / 2 - 6);
+    g.lineTo(x - 6, y + MENU_H / 2);
+    g.lineTo(x - 16, y + MENU_H / 2 + 6);
+    g.closePath();
+    g.fill();
+    g.restore();
+  }
+
   g.save();
   if (accent) {
     g.shadowColor = '#c48bff';
     g.shadowBlur = 12 + pulse * 12;
-    g.fillStyle = '#d7b3ff';
+    g.fillStyle = selected ? '#f2e6ff' : '#d7b3ff';
   } else {
     g.fillStyle = selected ? '#ffffff' : '#93a0b8';
   }
