@@ -1,7 +1,7 @@
 import { initInput, endFrame } from './input.js';
 import { Battle } from './battle.js';
-import { TitleScreen, AchievementsScreen, SettingsScreen, StealChoiceScreen, ResultScreen } from './screens.js';
-import { save, unlockEndless, unlockAchievement, recordDay } from './save.js';
+import { TitleScreen, AchievementsScreen, SettingsScreen, EndingChoiceScreen, ResultScreen } from './screens.js';
+import { save, unlockEndless, unlockAchievement, recordDay, persist } from './save.js';
 import { getAchievement, SURVIVAL_THRESHOLDS } from './achievements.js';
 import { pushToast, updateToasts, drawToasts } from './ui.js';
 import { getMenuScene } from './scene.js';
@@ -70,8 +70,8 @@ class Game {
     this.screen = new DebugScreen(this);
   }
 
-  showStealChoice() {
-    this.screen = new StealChoiceScreen(this);
+  showEndingChoice() {
+    this.screen = new EndingChoiceScreen(this);
   }
 
   // ---------- ストーリー ----------
@@ -122,14 +122,33 @@ class Game {
       announceAbility(this.storyStage + 1);
       this.startStory(this.storyStage + 1);
     } else {
-      this.showStealChoice();
+      this.showEndingChoice();
     }
   }
 
-  stealPower() {
+  chooseEnding(key) {
     unlockEndless();
-    this.setNoise(true);
-    this.showTitleWithGlitch();
+    if (key === 'steal') {
+      this.setNoise(true);
+      this.showTitleWithGlitch();
+      return;
+    }
+    if (key === 'erase') {
+      // 昨日の自分のデータごと消すので、次の周回に持ち越す記録が無くなる
+      this.storyGhosts = [];
+      save.bestDay = 0;
+      persist();
+    }
+    this.setNoise(false);
+    this.screen = new ResultScreen(this, {
+      title: key === 'destroy' ? 'ECHO 消滅' : '記録 消去',
+      lines:
+        key === 'destroy'
+          ? ['昨日の自分は、二度と現れない。', '手元に残ったのは、剣だけだった。']
+          : ['積み上げた 10 日ぶんの記録が消えた。', 'まねされるものは、もう何も無い。'],
+      items: [{ key: 'title', label: 'タイトルへ' }],
+      onSelect: () => this.showTitle({ selectKey: 'endless' }),
+    });
   }
 
   showTitleWithGlitch() {

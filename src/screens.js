@@ -314,21 +314,21 @@ export class SettingsScreen {
   }
 }
 
-export class StealChoiceScreen {
+export class EndingChoiceScreen {
   constructor(game) {
     this.game = game;
     this.time = 0;
     this.menu = new Menu([
+      { key: 'erase', icon: '◈', label: '《記録を消す》' },
+      { key: 'destroy', icon: '◇', label: '《エコーを破壊する》' },
       { key: 'steal', icon: '◆', label: '《能力を奪う》', accent: '#9e5cff' },
-      { key: 'spare', icon: '◇', label: '《見逃す》' },
     ]);
   }
 
   update(dt) {
     this.time += dt;
     const choice = this.menu.update();
-    if (choice === 'steal') this.game.stealPower();
-    else if (choice === 'spare') this.game.showTitle({ selectKey: 'play' });
+    if (choice) this.game.chooseEnding(choice);
   }
 
   draw(g) {

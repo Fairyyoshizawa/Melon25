@@ -133,7 +133,7 @@ export class DebugScreen {
       if (debug.ghost === 'default') debug.ghost = 'sample';
       this.game.startStory(9);
     } else if (key === 'ending') {
-      this.game.showStealChoice();
+      this.game.showEndingChoice();
     } else if (key === 'story') {
       this.game.startStory(this.day - 1);
     } else if (key === 'endless') {
