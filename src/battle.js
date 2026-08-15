@@ -45,33 +45,37 @@ const APPROACH_RATE = 0.5; // ジリジリ間合いを詰める速度倍率
 const REACH = ATTACK_RANGE - 10;
 const COMBO_GAP = 0.9; // これ以内に続く斬撃は同じコンボ扱い
 
-// 記録フレームから「判断」だけを抜き出す。座標や移動は捨て、
-// 攻撃／パリィ／能力の順番と間合いだけを昨日の自分から受け継ぐ。
-function ghostActionsFrom(frames) {
-  const acts = [];
+// 記録フレームを「どんな状況で何をしたか」に組み直す。
+// 状況 = そこまでに相手から何回斬りかかられたか。
+// 同じ回数斬りかかられたときの行動を 1 つの列にまとめ、エコーはその列をなぞる。
+function ghostPlanFrom(frames) {
+  const plan = new Map();
   let last = 0;
   for (const f of frames) {
-    const foeSwings = f.foeSwings || 0;
-    if (f.ability >= 0) {
-      acts.push({ type: 'ability', idx: f.ability, gap: f.t - last, foeSwings });
+    const taken = f.foeSwings || 0;
+    const push = (act) => {
+      if (!plan.has(taken)) plan.set(taken, []);
+      plan.get(taken).push({ ...act, gap: clamp(f.t - last, 0, 1.4) });
       last = f.t;
-    }
-    if (f.attack) {
-      acts.push({ type: 'attack', gap: f.t - last, foeSwings });
-      last = f.t;
-    } else if (f.parry) {
-      acts.push({ type: 'parry', gap: f.t - last, foeSwings });
-      last = f.t;
-    }
+    };
+    if (f.ability >= 0) push({ type: 'ability', idx: f.ability });
+    if (f.attack) push({ type: 'attack' });
+    else if (f.parry) push({ type: 'parry' });
   }
-  return acts;
+  return plan;
 }
 
 // 昨日の行動のうちどれだけが攻撃だったかを、そのまま攻撃頻度にする
-function ghostAggression(acts) {
-  if (!acts || !acts.length) return 0.35;
-  const attacks = acts.filter((a) => a.type === 'attack').length;
-  return clamp(0.25 + (attacks / acts.length) * 0.7, 0.25, 0.95);
+function ghostAggression(plan) {
+  if (!plan || !plan.size) return 0.35;
+  let attacks = 0;
+  let total = 0;
+  for (const acts of plan.values()) {
+    total += acts.length;
+    attacks += acts.filter((a) => a.type === 'attack').length;
+  }
+  if (!total) return 0.35;
+  return clamp(0.25 + (attacks / total) * 0.7, 0.25, 0.95);
 }
 
 function recoverOf(f) {
@@ -175,10 +179,11 @@ export class Battle {
     // 座標ではなく判断を再生するので、間合いが無ければ攻撃せず近づく。
     this.recording = [];
     this.ghost = config.ghost && config.ghost.length ? config.ghost : null;
-    this.ghostActions = this.ghost ? ghostActionsFrom(this.ghost) : null;
-    // 昨日の攻めっ気は、記録を使い切ったあとの AI にも引き継ぐ
-    this.attackChance = ghostAggression(this.ghostActions);
-    this.ghostIndex = 0;
+    this.ghostPlan = this.ghost ? ghostPlanFrom(this.ghost) : null;
+    // 昨日の攻めっ気は、まねる行動が無い状況での AI にも引き継ぐ
+    this.attackChance = ghostAggression(this.ghostPlan);
+    this.ghostKey = -1; // 今なぞっている「何回斬りかかられたか」
+    this.ghostStep = 0;
     this.ghostWait = 0;
     this.ghostHold = 0;
     this.comboCut = false;
@@ -293,11 +298,10 @@ export class Battle {
     const dist = Math.abs(p.x - e.x);
     e.dir = p.x > e.x ? 1 : -1;
 
-    if (this.ghostActions && this.ghostIndex < this.ghostActions.length) {
+    if (this.ghostBucket()) {
       this.stepGhost(dt, dist);
       return;
     }
-    this.ghost = null;
     this.runAi(dt, dist);
   }
 
@@ -359,33 +363,25 @@ export class Battle {
       return;
     }
 
-    if (this.reactNow(dist)) return;
-
     this.ghostWait -= dt;
     if (this.ghostWait > 0) {
       this.approach(dt, dist);
       return;
     }
 
-    const act = this.ghostActions[this.ghostIndex];
-    // 昨日は「2 回振られたあとにガード」なら、今日も 2 回振られるまで待つ。
-    // 待つのは相手の攻撃への反応だけで、自分からの攻めは相手待ちにしない
-    if (act.type === 'parry' && this.playerSwings < act.foeSwings) {
-      this.approach(dt, dist);
-      this.ghostHold += dt;
-      if (this.ghostHold > 4) this.consumeGhost();
-      return;
-    }
+    const bucket = this.ghostBucket();
+    const act = bucket[this.ghostStep];
     if (!this.actionFits(act, dist)) {
-      // 間合いが合わないので今は出さない。詰めながら少しだけ待つ。
+      // 間合いや相手の状態が合わないので今は出さない。詰めながら待つ。
       this.approach(dt, dist);
       this.maybeFeint(act, dist);
       this.ghostHold += dt;
-      if (this.ghostHold > 1.4) this.consumeGhost(); // 出せないまま固まらないよう捨てる
+      // ガードは相手が振ってくるまで待つ。攻撃は待ちすぎない
+      if (this.ghostHold > (act.type === 'parry' ? 4 : 1.4)) this.advanceGhost();
       return;
     }
 
-    this.consumeGhost();
+    this.advanceGhost();
     e.fx.memory = MEMORY_FLASH;
     if (act.type === 'attack') this.startAttack(e);
     else if (act.type === 'parry') this.startParry(e);
@@ -407,41 +403,47 @@ export class Battle {
     return true;
   }
 
-  consumeGhost() {
-    this.ghostIndex++;
+  // 今の「何回斬りかかられたか」に対応する、昨日の行動列。
+  // その回数の記録が無ければ、それより前の状況の記録を使う。
+  ghostBucket() {
+    if (!this.ghostPlan || !this.ghostPlan.size) return null;
+    for (let k = this.playerSwings; k >= 0; k--) {
+      const acts = this.ghostPlan.get(k);
+      if (!acts || !acts.length) continue;
+      if (k !== this.ghostKey) {
+        // 斬りかかられた回数が変わった瞬間に、その状況の行動へ切り替える
+        this.ghostKey = k;
+        this.ghostStep = 0;
+        this.ghostHold = 0;
+        this.ghostWait = Math.min(acts[0].gap, 0.35);
+      }
+      return acts;
+    }
+    return null;
+  }
+
+  advanceGhost() {
+    const bucket = this.ghostPlan.get(this.ghostKey);
     this.ghostHold = 0;
-    const next = this.ghostActions[this.ghostIndex];
-    // 昨日の間隔をそのまま写す。連打していたなら今日も連打になる
-    this.ghostWait = next ? clamp(next.gap, 0, 1.4) : 0;
+    // 同じ状況が続く間は、昨日の行動列を繰り返す
+    this.ghostStep = (this.ghostStep + 1) % bucket.length;
+    const next = bucket[this.ghostStep];
+    this.ghostWait = this.ghostStep === 0 ? Math.max(next.gap, 0.5) : next.gap;
   }
 
   // 空振りが確定した連撃は最後まで振らずに切り上げる
   cutGhostCombo() {
     this.comboCut = true;
-    while (this.ghostIndex < this.ghostActions.length) {
-      const a = this.ghostActions[this.ghostIndex];
+    const bucket = this.ghostBucket();
+    if (!bucket) return;
+    while (this.ghostStep < bucket.length) {
+      const a = bucket[this.ghostStep];
       if (a.type !== 'attack' || a.gap > COMBO_GAP) break;
-      this.ghostIndex++;
+      this.ghostStep++;
     }
+    this.ghostStep %= bucket.length;
     this.ghostHold = 0;
     this.ghostWait = 0.2;
-  }
-
-  // 記憶どおりではなく、今のプレイヤーに反応する分（およそ 3 割）
-  reactNow(dist) {
-    const e = this.echo;
-    const p = this.player;
-    if (p.state === 'attack' && p.stateTime < ATTACK_WINDUP && dist < ATTACK_RANGE + 20) {
-      if (Math.random() < 0.02 / this.aiReaction) {
-        this.startParry(e);
-        return true;
-      }
-    }
-    if (dist <= REACH && Math.random() < 0.006) {
-      this.startAttack(e);
-      return true;
-    }
-    return false;
   }
 
   approach(dt, dist) {
