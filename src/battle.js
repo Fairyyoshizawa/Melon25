@@ -13,6 +13,7 @@ import { sfx } from './audio.js';
 import { drawCenteredText, drawGlowBar, drawPanel, drawKeyCap, drawSpacedText } from './ui.js';
 import { save } from './save.js';
 import { getBattleScene, drawSilhouette } from './scene.js';
+import { DEBUG_ENABLED, debug, debugActive } from './debug.js';
 
 const FOOT_Y = 448;
 const FIGURE_H = 116;
@@ -186,6 +187,11 @@ export class Battle {
     getBattleScene().update(dt);
     this.shake = Math.max(0, this.shake - dt * 3);
     this.hitFlash = Math.max(0, this.hitFlash - dt * 4);
+
+    // 開発用: エコーを瀕死にして撃破後の流れだけ確認する
+    if (DEBUG_ENABLED && wasPressed('debugKill') && !this.result) {
+      this.echo.hp = Math.min(this.echo.hp, 1);
+    }
 
     if (wasPressed('back') && !this.result) {
       this.onEnd({ result: 'quit', battle: this });
@@ -646,6 +652,7 @@ export class Battle {
   }
 
   applyDamage(attacker, defender, damage, source) {
+    if (DEBUG_ENABLED && debug.god && defender === this.player) damage = 0;
     defender.hp = Math.max(0, defender.hp - damage);
     defender.state = 'hitstun';
     defender.stateTime = 0;
@@ -851,6 +858,16 @@ export class Battle {
   drawHud(g) {
     const p = this.player;
     const e = this.echo;
+
+    // デバッグ設定を有効にしたまま素の手触りを判定しないよう明示する
+    if (debugActive()) {
+      g.save();
+      g.fillStyle = '#8fffc4';
+      g.font = 'bold 12px sans-serif';
+      g.textAlign = 'center';
+      g.fillText(`DEBUG${debug.god ? ' / 無敵' : ''}`, 480, 76);
+      g.restore();
+    }
 
     // 左上: HP / EP
     g.save();
