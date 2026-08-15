@@ -32,6 +32,33 @@ const PARRY_STAGGER = 0.6;
 const BASE_DAMAGE = 14; // 振りが遅くなったぶん一撃を重く
 const MP_REGEN = 9;
 
+const MEMORY_FLASH = 0.5; // 記憶再現中に走る紫ノイズの長さ
+const FEINT_TIME = 0.4;
+const APPROACH_RATE = 0.72; // ジリジリ間合いを詰める速度倍率
+const REACH = ATTACK_RANGE - 10;
+const COMBO_GAP = 0.9; // これ以内に続く斬撃は同じコンボ扱い
+
+// 記録フレームから「判断」だけを抜き出す。座標や移動は捨て、
+// 攻撃／パリィ／能力の順番と間合いだけを昨日の自分から受け継ぐ。
+function ghostActionsFrom(frames) {
+  const acts = [];
+  let last = 0;
+  for (const f of frames) {
+    if (f.ability >= 0) {
+      acts.push({ type: 'ability', idx: f.ability, gap: f.t - last });
+      last = f.t;
+    }
+    if (f.attack) {
+      acts.push({ type: 'attack', gap: f.t - last });
+      last = f.t;
+    } else if (f.parry) {
+      acts.push({ type: 'parry', gap: f.t - last });
+      last = f.t;
+    }
+  }
+  return acts;
+}
+
 function makeFighter(opts) {
   return {
     name: opts.name,
@@ -60,6 +87,7 @@ function makeFighter(opts) {
       timestopSelf: 0,
       flame: 0,
       dashTrail: 0,
+      memory: 0,
     },
     usedAbilities: new Set(),
     lastAfterimageAt: -99,
@@ -119,10 +147,18 @@ export class Battle {
     this.mirrorAfterimage = false;
     this.pendingUnlocks = [];
 
-    // 昨日の自分＝前回の戦闘で記録したプレイヤーの操作。左右反転して再生する。
+    // 昨日の自分＝前回の戦闘で記録したプレイヤーの操作。
+    // 座標ではなく判断を再生するので、間合いが無ければ攻撃せず近づく。
     this.recording = [];
     this.ghost = config.ghost && config.ghost.length ? config.ghost : null;
+    this.ghostActions = this.ghost ? ghostActionsFrom(this.ghost) : null;
     this.ghostIndex = 0;
+    this.ghostWait = 0;
+    this.ghostHold = 0;
+    this.comboCut = false;
+    this.echoWhiffAt = -99;
+    this.baitCount = 0; // 空振り待ち→反撃をされた回数
+    this.feintCd = 0;
     this.fightTime = 0;
   }
 
@@ -209,15 +245,24 @@ export class Battle {
   }
 
   handleEcho(dt) {
-    if (this.ghost) {
-      this.replayGhost();
-      return;
-    }
     const e = this.echo;
+    if (this.feintCd > 0) this.feintCd -= dt;
     if (!this.canAct(e)) return;
     const p = this.player;
     const dist = Math.abs(p.x - e.x);
     e.dir = p.x > e.x ? 1 : -1;
+
+    if (this.ghostActions && this.ghostIndex < this.ghostActions.length) {
+      this.stepGhost(dt, dist);
+      return;
+    }
+    this.ghost = null;
+    this.runAi(dt, dist);
+  }
+
+  runAi(dt, dist) {
+    const e = this.echo;
+    const p = this.player;
 
     this.aiTimer -= dt;
     if (e.state === 'idle') {
@@ -246,31 +291,118 @@ export class Battle {
     }
   }
 
-  // 記録済みの操作を鏡写しで再生する。記録を使い切ったら通常 AI に戻す。
-  replayGhost() {
+  // 昨日の判断を今の状況に合わせて再生する。
+  // 射程外なら攻撃を出さずに近づき、空振りしそうならコンボを中断して追う。
+  stepGhost(dt, dist) {
     const e = this.echo;
-    while (this.ghostIndex < this.ghost.length && this.ghost[this.ghostIndex].t <= this.fightTime) {
-      const f = this.ghost[this.ghostIndex++];
-      if (!this.canAct(e)) continue;
-      const vx = -f.vx;
-      if (e.state === 'idle') {
-        if (vx !== 0) {
-          e.x += vx * e.speed * f.dt;
-          e.dir = vx > 0 ? 1 : -1;
-        }
-        if (f.attack) {
-          e.dir = this.player.x > e.x ? 1 : -1;
-          this.startAttack(e);
-        } else if (f.parry) {
-          this.startParry(e);
-        }
+    if (e.state !== 'idle') {
+      if (
+        e.state === 'attack' &&
+        !e.swingHit &&
+        !this.comboCut &&
+        e.stateTime >= ATTACK_WINDUP + ATTACK_ACTIVE &&
+        dist > ATTACK_RANGE + 30
+      ) {
+        this.cutGhostCombo();
       }
-      if (f.ability >= 0) {
-        this.useAbility(e, this.player, f.ability);
-        if (f.ability === 0) e.dashArmed = 0.8;
+      return;
+    }
+
+    if (this.reactNow(dist)) return;
+
+    this.ghostWait -= dt;
+    if (this.ghostWait > 0) {
+      this.approach(dt, dist);
+      return;
+    }
+
+    const act = this.ghostActions[this.ghostIndex];
+    if (!this.actionFits(act, dist)) {
+      // 間合いが合わないので今は出さない。詰めながら少しだけ待つ。
+      this.approach(dt, dist);
+      this.maybeFeint(act, dist);
+      this.ghostHold += dt;
+      if (this.ghostHold > 1.4) this.consumeGhost(); // 出せないまま固まらないよう捨てる
+      return;
+    }
+
+    this.consumeGhost();
+    e.fx.memory = MEMORY_FLASH;
+    if (act.type === 'attack') this.startAttack(e);
+    else if (act.type === 'parry') this.startParry(e);
+    else {
+      this.useAbility(e, this.player, act.idx);
+      if (act.idx === 0) e.dashArmed = 0.8;
+    }
+  }
+
+  actionFits(act, dist) {
+    if (act.type === 'attack') return dist <= REACH;
+    if (act.type === 'parry') return this.player.state === 'attack' && dist < ATTACK_RANGE + 30;
+    const ab = ABILITIES[act.idx];
+    const e = this.echo;
+    if (!e.abilitySet.includes(act.idx) || e.cd[act.idx] > 0 || e.mp < ab.cost) return false;
+    if (act.idx === 0) return dist > 160; // 瞬歩は距離を潰すために使う
+    if (act.idx === 1 || act.idx === 2) return dist < 200;
+    if (act.idx === 4) return dist < 240;
+    return true;
+  }
+
+  consumeGhost() {
+    this.ghostIndex++;
+    this.ghostHold = 0;
+    const next = this.ghostActions[this.ghostIndex];
+    this.ghostWait = next ? clamp(next.gap, 0.05, 1.0) : 0;
+  }
+
+  // 空振りが確定した連撃は最後まで振らずに切り上げる
+  cutGhostCombo() {
+    this.comboCut = true;
+    while (this.ghostIndex < this.ghostActions.length) {
+      const a = this.ghostActions[this.ghostIndex];
+      if (a.type !== 'attack' || a.gap > COMBO_GAP) break;
+      this.ghostIndex++;
+    }
+    this.ghostHold = 0;
+    this.ghostWait = 0.2;
+  }
+
+  // 記憶どおりではなく、今のプレイヤーに反応する分（およそ 3 割）
+  reactNow(dist) {
+    const e = this.echo;
+    const p = this.player;
+    if (p.state === 'attack' && p.stateTime < ATTACK_WINDUP && dist < ATTACK_RANGE + 20) {
+      if (Math.random() < 0.02 / this.aiReaction) {
+        this.startParry(e);
+        return true;
       }
     }
-    if (this.ghostIndex >= this.ghost.length) this.ghost = null;
+    if (dist <= REACH && Math.random() < 0.012) {
+      this.startAttack(e);
+      return true;
+    }
+    return false;
+  }
+
+  approach(dt, dist) {
+    const e = this.echo;
+    if (dist <= REACH) {
+      e.x -= e.dir * e.speed * dt * 0.25; // 密着しすぎたら少し引く
+      return;
+    }
+    e.x += e.dir * e.speed * dt * APPROACH_RATE;
+  }
+
+  // 空振り待ち→反撃を 2 回やられたら、振るふりをして止まる
+  maybeFeint(act, dist) {
+    if (act.type !== 'attack') return;
+    if (this.baitCount < 2 || this.feintCd > 0) return;
+    if (dist <= REACH || dist > 260) return;
+    if (Math.random() > 0.03) return;
+    const e = this.echo;
+    e.state = 'feint';
+    e.stateTime = 0;
+    this.feintCd = 3.5;
   }
 
   pickAbility(e, dist) {
@@ -301,6 +433,7 @@ export class Battle {
     f.state = 'attack';
     f.stateTime = 0;
     f.swingHit = false;
+    if (f.isEcho) this.comboCut = false;
     f.swingIsDash = f.dashArmed > 0;
     f.dashArmed = 0;
   }
@@ -362,7 +495,7 @@ export class Battle {
   }
 
   stepFighter(f, other, dt, active) {
-    for (const key of ['iframe', 'reflect', 'afterimage', 'frozen', 'timestopSelf', 'dashTrail']) {
+    for (const key of ['iframe', 'reflect', 'afterimage', 'frozen', 'timestopSelf', 'dashTrail', 'memory']) {
       if (f.fx[key] > 0) f.fx[key] = Math.max(0, f.fx[key] - dt);
     }
     for (let i = 0; i < f.cd.length; i++) {
@@ -386,6 +519,7 @@ export class Battle {
         }
       }
       if (t >= ATTACK_WINDUP + ATTACK_ACTIVE + ATTACK_RECOVER) {
+        if (f.isEcho && !f.swingHit) this.echoWhiffAt = this.time;
         if (f.isEcho && f.swingIsDash && !f.swingHit) {
           this.dodgeDashStreak++;
           this.checkDodgeStreak();
@@ -393,6 +527,11 @@ export class Battle {
         f.state = 'idle';
         f.stateTime = 0;
         f.swingIsDash = false;
+      }
+    } else if (f.state === 'feint') {
+      if (f.stateTime >= FEINT_TIME) {
+        f.state = 'idle';
+        f.stateTime = 0;
       }
     } else if (f.state === 'parry') {
       if (f.stateTime >= PARRY_ACTIVE + PARRY_RECOVER) {
@@ -491,6 +630,8 @@ export class Battle {
       }
     } else {
       this.lastEchoDamageSource = source;
+      // 空振りを待ってから殴られた＝ハメられている
+      if (this.time - this.echoWhiffAt < 1.5) this.baitCount++;
     }
   }
 
@@ -586,7 +727,22 @@ export class Battle {
 
     const attacking = f.state === 'attack';
     const active = attacking && f.stateTime >= ATTACK_WINDUP && f.stateTime < ATTACK_WINDUP + ATTACK_ACTIVE;
-    figure(f.x, f.fx.frozen > 0 ? 0.6 : 1, { raise: attacking && !active });
+    figure(f.x, f.fx.frozen > 0 ? 0.6 : 1, { raise: (attacking && !active) || f.state === 'feint' });
+
+    // 昨日の行動を再現している間だけ、身体に紫のノイズが走る
+    if (f.fx.memory > 0) {
+      const a = f.fx.memory / MEMORY_FLASH;
+      g.save();
+      g.globalAlpha = 0.65 * a;
+      g.fillStyle = '#c46bff';
+      g.shadowColor = '#c46bff';
+      g.shadowBlur = 12;
+      for (let i = 0; i < 7; i++) {
+        const yy = FOOT_Y - Math.random() * FIGURE_H;
+        g.fillRect(f.x - 26 + (Math.random() - 0.5) * 10, yy, 52, 2);
+      }
+      g.restore();
+    }
 
     g.save();
     const cy = FOOT_Y - FIGURE_H * 0.5;
@@ -680,7 +836,7 @@ export class Battle {
     if (this.mode === 'endless') {
       return `連続パリィ ${this.parryStreak} / 瞬歩回避 ${this.dodgeDashStreak}`;
     }
-    return 'ヒント：エコーは昨日のあなたの動きや使った能力を再現してくる。';
+    return 'ヒント：紫に光った時、エコーは昨日のあなたの行動を再現している。';
   }
 
   drawAbilityList(g) {
