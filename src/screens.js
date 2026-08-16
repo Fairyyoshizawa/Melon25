@@ -400,15 +400,21 @@ export class EndingScreen {
     if (beat.clock) this.drawClock(g, beat);
     if (beat.heading) {
       // 長い見出しでも切れないよう、本文と同じ左端に揃える
-      drawSpacedText(g, beat.heading, 64, beat.clock ? 300 : 140, 'bold 34px sans-serif', beat.color || '#e8eefc', 4, 'left');
+      const headings = Array.isArray(beat.heading) ? beat.heading : [beat.heading];
+      const lineHeight = 44;
+      const startY = beat.clock ? 300 : 140;
+      headings.forEach((h, i) => {
+        drawSpacedText(g, h, 64, startY + i * lineHeight, 'bold 34px sans-serif', beat.color || '#e8eefc', 4, 'left');
+      });
     }
 
     g.save();
     g.fillStyle = '#8fa0bd';
     g.font = '16px sans-serif';
+    const lineBaseY = (beat.clock ? 348 : 190) + ((Array.isArray(beat.heading) ? beat.heading.length - 1 : 0) * 44);
     beat.lines.forEach((line, i) => {
       if (this.beatTime < i * 0.9) return;
-      g.fillText(line, 64, (beat.clock ? 348 : 190) + i * 28);
+      g.fillText(line, 64, lineBaseY + i * 28);
     });
     g.restore();
 
