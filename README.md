@@ -41,6 +41,20 @@
 
 ---
 
+## デモ動画
+
+<p align="center">
+  <a href="https://www.loom.com/share/1a564234aff94b03b35f63fa8a2c610a">
+    <img src="https://cdn.loom.com/sessions/thumbnails/1a564234aff94b03b35f63fa8a2c610a-f90468384fd98d1a.gif" alt="昨日の自分と戦う新感覚ゲーム" width="80%">
+  </a>
+</p>
+
+<p align="center">
+  <a href="https://www.loom.com/share/1a564234aff94b03b35f63fa8a2c610a">▶ Loom でゲームプレイ動画を見る</a>
+</p>
+
+---
+
 ## 開発者のこだわり
 
 ### 1. 「攻撃」をコピーするのではなく「判断」をコピーする
